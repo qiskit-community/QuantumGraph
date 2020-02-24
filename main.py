@@ -13,8 +13,9 @@ from QuantumGraph.QuantumGraph import QuantumGraph
 
 
 ####################
-num_civs = 5
-backend = 'depolarized'
+num_civs = 2
+backend = 'simulator'
+static = True
 years = 20
 ####################
 
@@ -142,17 +143,19 @@ def update():
                                 border[civ][neighbour] = [(x,y)]
                                 
     for civ in range(num_civs):
-        if None in border[civ]:
-            frontier = len(border[civ][None])
-        else:
-            frontier = 0
-        if frontier>(loss[civ]+gain[civ]): # when frontiers are dominant, increase exploration
-            ai.set_state({'X':0,'Y':1,'Z':0}, civ, fraction=1/4, update=False)
-        else:
-            if loss[civ]>gain[civ]:  # when losses are dominant, increase defense
-                ai.set_state({'X':1,'Y':0,'Z':0}, civ, fraction=max(1, loss[civ]/(np.pi*radius**2)), update=False)
-            else: # when gains are dominant, increase aggression
-                ai.set_state({'X':0,'Y':0,'Z':1}, civ, fraction=max(1, gain[civ]/(np.pi*radius**2)), update=False)
+        if civ not in frozen:
+            if None in border[civ]:
+                frontier = len(border[civ][None])
+            else:
+                frontier = 0
+            if frontier>(loss[civ]+gain[civ]): # when frontiers are dominant, increase exploration
+                ai.set_state({'X':0,'Y':1,'Z':0}, civ, fraction=1/4, update=False)
+            else:
+                if loss[civ]>gain[civ]:  # when losses are dominant, increase defense
+                    ai.set_state({'X':1,'Y':0,'Z':0}, civ, fraction=max(1, loss[civ]/(np.pi*radius**2)), update=False)
+                else: # when gains are dominant, increase aggression
+                    ai.set_state({'X':0,'Y':0,'Z':1}, civ, fraction=max(1, gain[civ]/(np.pi*radius**2)), update=False)
+                
     ai.update_tomography()
                                 
 
@@ -238,7 +241,7 @@ def get_tactic(civ):
     
     # Of all these, the maximum is value is determined, as well as the
     # corresponding tactic and neighbour.
-    best_tactic,target_neighbour = 'Z',None
+    best_tactic,target_neighbour = 'Y',None
     max_expect = -1
     for neighbour in expect: 
         for tactic in expect[neighbour]:
@@ -246,7 +249,7 @@ def get_tactic(civ):
                 max_expect = expect[neighbour][tactic]
                 best_tactic,target_neighbour = tactic, neighbour
                 
-    if best_tactic=='Z':
+    if best_tactic=='Y':
         target_neighbour = None
                 
     return best_tactic,target_neighbour
@@ -260,8 +263,7 @@ def make_move(civ):
     # see if the civ has capacity for a new city
     surplus = get_surplus(civ)
     
-    # if there is no capacity, but the new city is needed for
-    # attack or defense, remove a city
+    # if there is no capacity, remove a city
     if (surplus<1) and (tactic in ['X','Y','Z']):
         old_city = choose_city(civ,'remove')
         if old_city:
@@ -275,9 +277,13 @@ def make_move(civ):
             add_city(city,civ)
         # otherwise, attempt to explore
         else:
-            city = choose_city(civ,'Y',None)
+            tactic = 'Y'
+            neighbour = None
+            city = choose_city(civ,tactic,neighbour)
             if city:
                 add_city(city,civ)
+                
+    print(civ,tactic,neighbour)
                 
     return tactic,neighbour,city
 
@@ -300,14 +306,29 @@ for x in range(L):
 
 colour = [ random_colour() for _ in range(num_civs) ]
 
+h = 0
 while True:
     
-    folder = str(num_civs) +'_'+ backend +'_'+ str(int(time.time()))
+    folder = str(num_civs) +'_'+ backend +'_'
+    if static:
+        folder += 'static_'
+    folder += str(int(time.time()))
     os.mkdir('maps/'+folder)
+    
+    points, coupling_map, half = get_points(L)
+    
+    if static:
+        h = (h+1)%2
+        frozen = half[h]
+    else:
+        frozen = []        
 
     ai = QuantumGraph(num_civs,backend=backend)
     for civ in range(num_civs):
-        ai.set_state({'X':0,'Y':1,'Z':0}, civ, update=False) # initially set to explore
+        if civ in frozen:
+            ai.set_state({'X':rnd(),'Y':0,'Z':rnd()}, civ, update=False)
+        else:
+            ai.set_state({'X':0,'Y':1,'Z':0}, civ, update=False) # initially set to explore
 
     owner = {}
     influence = {}
@@ -315,8 +336,6 @@ while True:
         for y in range(L):
             owner[x,y] = None
             influence[x,y] = {}
-
-    points, coupling_map = get_points(L)
 
     cities = [[] for _ in range(num_civs)]
     city_owners = {}
@@ -351,7 +370,7 @@ while True:
 
         pygame.image.save(screen, 'maps/'+folder+'/year_'+str(year)+'.png')
 
-        dump = {'moves':moves, 'transfers':transfers}
+        dump = {'moves':moves, 'transfers':transfers, 'area':area, 'frozen':frozen}
         with open('maps/'+folder+'/data.txt', 'a') as file:
             file.write(str(dump)+'\n')
 
