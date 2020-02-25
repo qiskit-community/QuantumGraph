@@ -13,7 +13,7 @@ from QuantumGraph.QuantumGraph import QuantumGraph
 
 
 ####################
-num_civs = 2
+num_civs = 5
 backend = 'simulator'
 static = True
 years = 20
@@ -30,11 +30,13 @@ clock = pygame.time.Clock()
 players = []
 
 def random_colour():
+    # return a random (r,g,b)
     def random_channel():
         return int( (0.2 + 0.6*rnd()) * 256 )
     return (random_channel(),random_channel(),random_channel())
 
 def draw_height():
+    # update screen with `height`
     for x in range(L):
         for y in range(L):
             h = height[x,y]
@@ -42,11 +44,13 @@ def draw_height():
             pygame.draw.rect(screen, rgb, box[x,y])
 
 def draw_cities():
+    # update screen with `cities`
     for civ in range(num_civs):
         for city in cities[civ]:
             pygame.draw.rect(screen, (64,64,64), box[city])
             
 def draw_territory():
+    # update screen with `owner` info
     for x in range(L):
         for y in range(L):
             if owner[x,y]!=None:
@@ -54,15 +58,19 @@ def draw_territory():
     draw_border()
     
 def draw_border():
+    # update screen with `border` info
     for civ in range(num_civs):
         for neighbour in border[civ]:
             for pos in border[civ][neighbour]:
                 pygame.draw.rect(screen, (26,26,26), box[pos]) # (144,129,86)
 
 def get_influence(d):
+    # return influence at distance `d` from a city
     return (d<2*radius)*( (d<radius) + 1/max(1,d)**2 )
                 
 def add_city(city, civ, remove=False):
+    # update the following when a `city` is added to `civ` (or removed for `remove=True`):
+    # `cities`, `city_owners`, `ruins`, `influence`
     (x,y) = city
     if remove:
         cities[civ].remove(city)
@@ -87,6 +95,7 @@ def add_city(city, civ, remove=False):
                         influence[xx,yy][civ] = inf
 
 def remove_city(city,civ):
+    # runs `add_city` for `remove=True`
     add_city(city, civ, remove=True)
     
 def update():
@@ -96,7 +105,7 @@ def update():
         border[civ] = {}
         loss[civ] = 0
         gain[civ] = 0
-    
+            
     for x in range(L):
         for y in range(L):
             infs = {civ:influence[x,y][civ] for civ in influence[x,y]}
@@ -109,17 +118,10 @@ def update():
                 if (x,y) in city_owners:
                     if city_owners[x,y]!=civ:
                         # city is protected from changing hands
-                        if (x,y)==cities[city_owners[x,y]][0]:# and len(cities[city_owners[x,y]])>1:
+                        if (x,y)==cities[city_owners[x,y]][0]:
                             owner[x,y] = city_owners[x,y]
                         else: # city changes hands
-                            # change relationship of the civs involved
-                            pair = [civ,city_owners[x,y]]
-                            if pair in ai.coupling_map or pair[::-1] in ai.coupling_map:
-                                ai.qc.x(civ)
-                                ai.qc.ch(civ,city_owners[x,y])
-                                ai.qc.x(civ)
-                            # do the admin
-                            transfers.append( (city_owners[x,y], civ, (x,y)) )
+                            transfers[city_owners[x,y]] = civ
                             remove_city((x,y),city_owners[x,y])
                             add_city((x,y),civ)
     
@@ -143,23 +145,30 @@ def update():
                                 border[civ][neighbour] = [(x,y)]
                                 
     for civ in range(num_civs):
+        # not on static civs
         if civ not in frozen:
-            if None in border[civ]:
-                frontier = len(border[civ][None])
+            if civ in transfers:
+                pair = [civ,transfers[civ]]
+                if pair in ai.coupling_map or pair[::-1] in ai.coupling_map:
+                    ai.qc.cz(transfers[civ],civ)
+                else:
+                    ai.set_state({'X':1,'Y':0,'Z':0}, civ, update=False)
             else:
-                frontier = 0
-            if frontier>(loss[civ]+gain[civ]): # when frontiers are dominant, increase exploration
-                ai.set_state({'X':0,'Y':1,'Z':0}, civ, fraction=1/4, update=False)
-            else:
-                if loss[civ]>gain[civ]:  # when losses are dominant, increase defense
-                    ai.set_state({'X':1,'Y':0,'Z':0}, civ, fraction=max(1, loss[civ]/(np.pi*radius**2)), update=False)
-                else: # when gains are dominant, increase aggression
-                    ai.set_state({'X':0,'Y':0,'Z':1}, civ, fraction=max(1, gain[civ]/(np.pi*radius**2)), update=False)
-                
+                if None in border[civ]:
+                    frontier = len(border[civ][None])
+                else:
+                    frontier = 0
+                if frontier>(loss[civ]+gain[civ]): # when frontiers are dominant, increase exploration
+                    ai.set_state({'X':0,'Y':1,'Z':0}, civ, fraction=1/4, update=False)
+                else:
+                    if loss[civ]>gain[civ]:  # when losses are dominant, increase defense
+                        ai.set_state({'X':1,'Y':0,'Z':0}, civ, fraction=max(1, loss[civ]/(np.pi*radius**2)), update=False)
+                    else: # when gains are dominant, increase aggression
+                        ai.set_state({'X':0,'Y':0,'Z':1}, civ, fraction=max(1, gain[civ]/(np.pi*radius**2)), update=False)           
     ai.update_tomography()
-                                
-
+    
 def get_surplus(civ):
+    # for a `civ`, return the number of cities that can be added
     if len(cities[civ])==1:
         return 1
     else:
@@ -229,6 +238,7 @@ def get_tactic(civ):
     # the two qubit expectation values with the given neighbour
     # for which the support on civ is `pauli`.
     rho_civ = ai.get_state(civ)
+
     expect = {}
     for neighbour in border[civ]: 
         if neighbour!=None:  
@@ -251,7 +261,7 @@ def get_tactic(civ):
                 
     if best_tactic=='Y':
         target_neighbour = None
-                
+
     return best_tactic,target_neighbour
     
 def make_move(civ):
@@ -282,9 +292,7 @@ def make_move(civ):
             city = choose_city(civ,tactic,neighbour)
             if city:
                 add_city(city,civ)
-                
-    print(civ,tactic,neighbour)
-                
+       
     return tactic,neighbour,city
 
 ########################################################################################
@@ -343,18 +351,21 @@ while True:
         add_city(points[civ],civ)
 
     ruins = []
-    
-    transfers = []
 
     loss = [0 for _ in range(num_civs)]
     gain = [0 for _ in range(num_civs)]
 
     done = False
+    
+    transfers = {}
 
     for year in range(years):
 
         print(year)
 
+        last_transfers = {civ:transfers[civ] for civ in transfers}
+        transfers = {}
+        
         area = {civ:0 for civ in range(num_civs)}
         border = [{} for _ in range(num_civs)] 
         update()
@@ -380,19 +391,3 @@ while True:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_c:
                     done = True
-
-                    
-                    
-                    
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
