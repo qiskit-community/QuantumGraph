@@ -13,9 +13,9 @@ from QuantumGraph.QuantumGraph import QuantumGraph
 
 
 ####################
-num_civs = 5
-backend = 'simulator'
-static = True
+num_civs = 53
+backend = 'rochester'
+static = False
 years = 20
 ####################
 
@@ -148,11 +148,12 @@ def update():
         # not on static civs
         if civ not in frozen:
             if civ in transfers:
+                # set losing civ to max defense
+                ai.set_state({'X':1,'Y':0,'Z':0}, civ, update=False)
                 pair = [civ,transfers[civ]]
                 if pair in ai.coupling_map or pair[::-1] in ai.coupling_map:
+                    # if possible, do a cz to swap it in for defense specifically against the winner
                     ai.qc.cz(transfers[civ],civ)
-                else:
-                    ai.set_state({'X':1,'Y':0,'Z':0}, civ, update=False)
             else:
                 if None in border[civ]:
                     frontier = len(border[civ][None])
@@ -162,9 +163,9 @@ def update():
                     ai.set_state({'X':0,'Y':1,'Z':0}, civ, fraction=1/4, update=False)
                 else:
                     if loss[civ]>gain[civ]:  # when losses are dominant, increase defense
-                        ai.set_state({'X':1,'Y':0,'Z':0}, civ, fraction=max(1, loss[civ]/(np.pi*radius**2)), update=False)
+                        ai.set_state({'X':1,'Y':0,'Z':0}, civ, fraction=min(1, loss[civ]/(np.pi*radius**2)), update=False)
                     else: # when gains are dominant, increase aggression
-                        ai.set_state({'X':0,'Y':0,'Z':1}, civ, fraction=max(1, gain[civ]/(np.pi*radius**2)), update=False)           
+                        ai.set_state({'X':0,'Y':0,'Z':1}, civ, fraction=min(1, gain[civ]/(np.pi*radius**2)), update=False)           
     ai.update_tomography()
     
 def get_surplus(civ):
