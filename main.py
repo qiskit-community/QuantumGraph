@@ -13,10 +13,13 @@ from QuantumGraph.QuantumGraph import QuantumGraph
 
 
 ####################
-num_civs = 53
-backend = 'rochester'
-static = False
+num_civs = 28
+# 'simulator', 'cambridge', 'rochester' or 'depolarized'
+backend = 'cambridge'     
+# None or 'static'
+opponent_type = 'static'           
 years = 20
+runs = 10
 ####################
 
 
@@ -145,15 +148,19 @@ def update():
                                 border[civ][neighbour] = [(x,y)]
                                 
     for civ in range(num_civs):
-        # not on static civs
-        if civ not in frozen:
+        # not on static or random opponent civs
+        if (civ not in opponent) or (opponent_type not in ['static', 'random']):
             if civ in transfers:
                 # set losing civ to max defense
                 ai.set_state({'X':1,'Y':0,'Z':0}, civ, update=False)
                 pair = [civ,transfers[civ]]
                 if pair in ai.coupling_map or pair[::-1] in ai.coupling_map:
-                    # if possible, do a cz to swap it in for defense specifically against the winner
+                    # as much as possible, set up a <XZ>=<ZX>=1 state between loser and winner
+                    
+                    ai.set_state({'X':1,'Y':0,'Z':0}, transfers[civ], update=False)
                     ai.qc.cz(transfers[civ],civ)
+                    
+                    
             else:
                 if None in border[civ]:
                     frontier = len(border[civ][None])
@@ -165,7 +172,7 @@ def update():
                     if loss[civ]>gain[civ]:  # when losses are dominant, increase defense
                         ai.set_state({'X':1,'Y':0,'Z':0}, civ, fraction=min(1, loss[civ]/(np.pi*radius**2)), update=False)
                     else: # when gains are dominant, increase aggression
-                        ai.set_state({'X':0,'Y':0,'Z':1}, civ, fraction=min(1, gain[civ]/(np.pi*radius**2)), update=False)           
+                        ai.set_state({'X':0,'Y':0,'Z':1}, civ, fraction=min(1, loss[civ]/(np.pi*radius**2)), update=False)           
     ai.update_tomography()
     
 def get_surplus(civ):
@@ -238,27 +245,35 @@ def get_tactic(civ):
     # of the single qubit expectation value for each `pauli` with
     # the two qubit expectation values with the given neighbour
     # for which the support on civ is `pauli`.
-    rho_civ = ai.get_state(civ)
-
-    expect = {}
-    for neighbour in border[civ]: 
-        if neighbour!=None:  
-            rho_both = ai.get_relationship(civ,neighbour)
-            expect[neighbour] = {}
-            for pauli_civ in ['X','Y','Z']:
-                expect[neighbour][pauli_civ] = rho_civ[pauli_civ]
-                for pauli_ngbhr in ['X','Y','Z']:
-                    expect[neighbour][pauli_civ] += rho_both[pauli_civ+pauli_ngbhr]
     
-    # Of all these, the maximum is value is determined, as well as the
-    # corresponding tactic and neighbour.
-    best_tactic,target_neighbour = 'Y',None
-    max_expect = -1
-    for neighbour in expect: 
-        for tactic in expect[neighbour]:
-            if expect[neighbour][tactic]>max_expect:
-                max_expect = expect[neighbour][tactic]
-                best_tactic,target_neighbour = tactic, neighbour
+    if (civ in opponent) and (opponent=='random'):
+        
+        best_tactic = choice(['X','Y','Z'])
+        target_neighbour = choice(list(border[civ].keys()))
+        
+    else:
+    
+        rho_civ = ai.get_state(civ)
+
+        expect = {}
+        for neighbour in border[civ]: 
+            if neighbour!=None:  
+                rho_both = ai.get_relationship(civ,neighbour)
+                expect[neighbour] = {}
+                for pauli_civ in ['X','Y','Z']:
+                    expect[neighbour][pauli_civ] = rho_civ[pauli_civ]
+                    for pauli_ngbhr in ['X','Y','Z']:
+                        expect[neighbour][pauli_civ] += rho_both[pauli_civ+pauli_ngbhr]
+
+        # Of all these, the maximum is value is determined, as well as the
+        # corresponding tactic and neighbour.
+        best_tactic,target_neighbour = 'Y',None
+        max_expect = -1
+        for neighbour in expect: 
+            for tactic in expect[neighbour]:
+                if expect[neighbour][tactic]>max_expect:
+                    max_expect = expect[neighbour][tactic]
+                    best_tactic,target_neighbour = tactic, neighbour
                 
     if best_tactic=='Y':
         target_neighbour = None
@@ -316,28 +331,27 @@ for x in range(L):
 colour = [ random_colour() for _ in range(num_civs) ]
 
 h = 0
-while True:
+for _ in range(runs):
     
     folder = str(num_civs) +'_'+ backend +'_'
-    if static:
-        folder += 'static_'
+    if opponent_type:
+        folder += opponent_type + '_'
+    else:
+        folder += 'None_'
     folder += str(int(time.time()))
     os.mkdir('maps/'+folder)
     
     points, coupling_map, half = get_points(L)
     
-    if static:
+    if opponent_type:
         h = (h+1)%2
-        frozen = half[h]
+        opponent = half[h]
     else:
-        frozen = []        
+        opponent = []        
 
     ai = QuantumGraph(num_civs,backend=backend)
     for civ in range(num_civs):
-        if civ in frozen:
-            ai.set_state({'X':rnd(),'Y':0,'Z':rnd()}, civ, update=False)
-        else:
-            ai.set_state({'X':0,'Y':1,'Z':0}, civ, update=False) # initially set to explore
+        ai.set_state({'X':1,'Y':1,'Z':1}, civ, update=False)
 
     owner = {}
     influence = {}
@@ -382,7 +396,7 @@ while True:
 
         pygame.image.save(screen, 'maps/'+folder+'/year_'+str(year)+'.png')
 
-        dump = {'moves':moves, 'transfers':transfers, 'area':area, 'frozen':frozen}
+        dump = {'moves':moves, 'transfers':transfers, 'area':area, 'opponent':opponent}
         with open('maps/'+folder+'/data.txt', 'a') as file:
             file.write(str(dump)+'\n')
 
