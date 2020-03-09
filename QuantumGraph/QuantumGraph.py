@@ -83,11 +83,12 @@ class QuantumGraph ():
             self.backend = 'depolarized'
         elif backend=='simulator':
             self.backend = Aer.get_backend('qasm_simulator')
-        elif backend=='rochester':
+        elif backend in ['rochester', 'cambridge']:
+            backend_name = 'ibmq_' + backend
             IBMQ.load_account()
             for provider in IBMQ.providers():
                 for potential_backend in provider.backends():
-                    if potential_backend.name()=='ibmq_rochester':
+                    if potential_backend.name()==backend_name:
                         self.backend = potential_backend
             self.coupling_map = self.backend.configuration().coupling_map
                                   
