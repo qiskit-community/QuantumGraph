@@ -40,9 +40,9 @@ Quantum computing, Procedural content generation, game development, graph algori
 
 Quantum computers offer a radically new form of hardware, with radically new software to go with it~\cite{benioff,feynman,ike-mike}. Over the last few decades, many algorithms have been developed which offer a provable reduction in computational complexity in comparison with conventional digital computing~\cite{deutsch,montanaro}. This `quantum speedup' will be polynomial for some algorithms, such as those for search problems~\cite{grover}, but super-polynomial or even exponential for others, such factoring~\cite{shor}. Algorithms with proven quantum speedup address variety of different types of problem, including optimization problems and graph-theoretic analysis~\cite{algorithm-zoo,qiskit-textbook}.
 
-The hardware to run such algorithms is still very much in a prototype stage~\cite{quantum-volume}. Until now, hardware limitations have meant that it is far easier to simulate quantum devices on a standard laptop than to actually use the real versions. It is only with the current generation of 53 qubit devices from IBM and Google that quantum hardware can only be matched by days of dedicated usage on the world’s largest supercomputer~\cite{google-supremacy,ibm-summit}. Even so, the implementation of the ‘textbook’ algorithms requires the advent of fault-tolerant quantum computation, which is still some years away. Instead we are in the so-called NISQ era~\cite{nisq}, in which one very much has to design quantum algorithms at the machine code level and tailor the method to the exact device used. The path towards demonstrating an advantage over conventional computation is not so clear in this era, and is very much an active area of research~\cite{ibm-nisq}.
+The hardware to run such algorithms is still very much in a prototype stage~\cite{quantum-volume}. Until now, hardware limitations have meant that it is far easier to simulate quantum devices on a standard laptop than to actually use the real versions. It is only with the current generation of 53 qubit devices from IBM and Google that quantum hardware can only be matched by days of dedicated usage on the world’s largest supercomputer~\cite{google-supremacy,ibm-summit}. Even so, the implementation of the ‘textbook’ algorithms requires the advent of fault-tolerant quantum computation, which is still some years away. Instead we are in an era of noisy quantum computers~\cite{nisq}, in which one very much has to design quantum algorithms at the machine code level and tailor the method to the exact device used. The path towards demonstrating an advantage over conventional computation is not so clear in this era, and is very much an active area of research~\cite{ibm-nisq}.
 
-The first example of a concrete and useful quantum advantage will likely occur for problems whose structure closely resembles the physics of the quantum hardware. The easiest task that one might give a quantum computer is to simulate a quantum computer (though one might dispute whether this would really constitute a simulation~\cite{horsman:13}). The next obvious, and more useful, task might then be to simulate other quantum systems of interest~\cite{feynman}. Indeed, quantum chemistry is a major focus for NISQ era applications~\cite{kandala:17,ganzhorn:19}. But can we move beyond ideas of using quantum to simulate quantum, and instead find other simulations that would suit NISQ era quantum hardware? In this paper we aim to answer this question in the affirmative, for the case of procedural generation and AI for games.
+The first example of a concrete and useful quantum advantage will likely occur for problems whose structure closely resembles the physics of the quantum hardware. The easiest task that one might give a quantum computer is to simulate a quantum computer (though one might dispute whether this would really constitute a simulation~\cite{horsman:13}). The next obvious, and more useful, task might then be to simulate other quantum systems of interest~\cite{feynman}. Indeed, quantum chemistry is a major focus for applications~\cite{kandala:17,ganzhorn:19} in the era of noisy quantum computers. But can we move beyond ideas of using quantum to simulate quantum, and instead find other simulations that would suit near-term quantum hardware? In this paper we aim to answer this question in the affirmative, for the case of procedural generation and AI for games.
 
 Before continuing, it is worth making a note on the scope of this work. The development of games using quantum computers can be viewed in parallel to the history of games for conventional computers. This history began in the 1950s, with games such as  \textit{Bertie the Brain},  \textit{Nimrod} and  \textit{OXO}. Each was a computer-based implementation of an existing game, and designed more as a showcase of technology, or for education or research, than to be fun. The 1960s brought the first unique play experiences, starting with 1962’s \textit{Spacewar!}, which allowed a player to take control of a space ship via a simulation of orbital mechanics. But it wasn’t until a decade later that the first major commercial success emerged: 1972’s  \textit{Pong}.
 
@@ -122,7 +122,7 @@ One aspect of multi-qubit systems that will be very important for this work is t
 \begin{figure}[htbp]
 \begin{center}
 \includegraphics[width=0.95\columnwidth]{figures/rochester.png}
-\caption{Coupling map of the 53 qubit \textit{Rochester} device. The numbering convention for qubits, and error rates for single and two-qubit (CNOT) operations are also shown.}
+\caption{Coupling map of the 53 qubit \textit{ibmq\_rochester} device. The numbering convention for qubits, and error rates for single and two-qubit (CNOT) operations are also shown.}
 \label{rochester}
 \end{center}
 \end{figure}
@@ -207,7 +207,7 @@ To implement this, we simply implement the same process for the opponents, excep
 
 The metric by which the success of a nation can be measured is its total land area. We will therefore compare the standard nations to the opponents by means of the total land area.
 
-Results were taken for a set-up designed to be compatible with the coupling map of both the \textit{Rochester} and \textit{Cambridge} devices. These are prototype quantum processors created and made available on the cloud by IBM~\cite{ibm-nisq}. \textit{Rochester} has 53 qubits while \textit{Cambridge} has 28. The coupling map of \textit{Cambridge} is identical to that of the first 28 qubits of \textit{Rochester}, as defined by the qubit numbering convention. The coupling map of \textit{Rochester} is shown in Fig. (\ref{rochester}).
+Results were taken for a set-up designed to be compatible with the coupling map of both the \textit{ibmq\_rochester} and \textit{ibmq\_cambridge} devices. These are prototype quantum processors created and made available on the cloud by IBM~\cite{ibm-nisq}. \textit{ibmq\_rochester} has 53 qubits while \textit{ibmq\_cambridge} has 28. The coupling map of \textit{ibmq\_cambridge} is identical to that of the first 28 qubits of \textit{ibmq\_rochester}, as defined by the qubit numbering convention. The coupling map of \textit{ibmq\_rochester} is shown in Fig. (\ref{rochester}).
 
 All runs are done using the same initial city placement, designed such that qubits will mostly tend to share borders with their neighbours on the coupling map. This will help minimize cases for which a city changes hands, but the associated two-qubit gate cannot be applied. The initial layout is shown in Fig. (\ref{initial}).
 
@@ -220,7 +220,7 @@ All runs are done using the same initial city placement, designed such that qubi
 \end{figure}
 
 
-The total map size used is an $L \times L$ grid for $L=256$. The radius of influence is set to $r=5$. When opponents are present, they are chosen by taking a bicoloring of the nodes of the coupling map. As such, each standard nation will border only opponents, and vice-versa. Equal numbers of samples are taken with the opponents as each of the two bicolorings. Data was taken for small numbers of nations (7, 9 and 11) using simulations of the quantum process (free of any imperfections). In each case, ten distinct runs were made. Twelve runs were also made on the \textit{Cambridge} device, using all 28 qubits as nations.
+The total map size used is an $L \times L$ grid for $L=256$. The radius of influence is set to $r=5$. When opponents are present, they are chosen by taking a bicoloring of the nodes of the coupling map. As such, each standard nation will border only opponents, and vice-versa. Equal numbers of samples are taken with the opponents as each of the two bicolorings. Data was taken for small numbers of nations (7, 9 and 11) using simulations of the quantum process (free of any imperfections). In each case, ten distinct runs were made. Twelve runs were also made on the \textit{ibmq\_cambridge} device, using all 28 qubits as nations.
 
 \begin{figure}[htbp]
 \begin{center}
@@ -228,19 +228,19 @@ The total map size used is an $L \times L$ grid for $L=256$. The radius of influ
 \includegraphics[width=0.95\columnwidth]{figures/results_9.png}
 \includegraphics[width=0.95\columnwidth]{figures/results_11.png}
 \includegraphics[width=0.95\columnwidth]{figures/results_cambridge.png}
-\caption{Results for simulated runs on 7, 9 and 11 qubits, and a 28 qubit run on the \textit{Cambridge} device. The mean nation area is shown for each of a sequence of 20 rounds. The length of the bars correspond to the standard deviation of the data at each point.}
+\caption{Results for simulated runs on 7, 9 and 11 qubits, and a 28 qubit run on the \textit{ibmq\_cambridge} device. The mean nation area is shown for each of a sequence of 20 rounds. The length of the bars correspond to the standard deviation of the data at each point.}
 \label{default}
 \end{center}
 \end{figure}
 
 The growth of the mean area shows that the standard nations do indeed have an advantage over their opponents. This demonstrates that the evolution of their quantum state does indeed allow them to adapt to what is happening, and make effective decisions about how to react. However, the standard deviation shows that it is not unlikely for an opponent to be equally successful as a standard nation. Further work will therefore be done to increase the effectiveness of the quantum AI, and increase the gap between it and the opponent.
 
-Example maps from a standard run, in which all nations are run in the same way, is shown in Fig. (\ref{maps}). These are from runs on the 53 qubit \textit{Rochester} device.
+Example maps from a standard run, in which all nations are run in the same way, is shown in Fig. (\ref{maps}). These are from runs on the 53 qubit \textit{ibmq\_rochester} device.
 
 \begin{figure}[htbp]
 \begin{center}
 \includegraphics[width=0.95\columnwidth]{figures/maps.png}
-\caption{Maps generated by a standard run on the \textit{Rochester} device after 4, 9, 14 and 19 moves.}
+\caption{Maps generated by a standard run on the \textit{ibmq\_rochester} device after 4, 9, 14 and 19 moves.}
 \label{maps}
 \end{center}
 \end{figure}
