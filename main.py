@@ -13,13 +13,13 @@ from QuantumGraph.QuantumGraph import QuantumGraph
 
 
 ####################
-num_civs = 28
+num_civs = 53
 # 'simulator', 'cambridge', 'rochester' or 'depolarized'
-backend = 'cambridge'     
+backend = 'rochester'     
 # None or 'static'
-opponent_type = 'static'           
+opponent_type = None           
 years = 20
-runs = 10
+runs = 1
 ####################
 
 

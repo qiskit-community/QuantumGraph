@@ -28,7 +28,7 @@ jwo@zurich.ibm.com
 
 \begin{abstract}
 
-Quantum computation is an emerging technology that promises a wide range of possible use cases. This promise is primarily based on algorithms that are unlikely to be viable over the coming decade. Instead, quantum software in the near-term will need to be carefully tailored to the hardware available. In this paper, we begin to explore whether near-term quantum computers could provide tools that are useful in the creation and implementation of computer games. To do this we consider the procedural generation of geopolitcal maps and their associated history. This is performed by encoding a rudimentary decision making process for the nations within a quantum procedure. Given the novelty of quantum computing within the field of procedural generation, we also provide an introduction to the basic concepts involved.
+Quantum computation is an emerging technology that promises a wide range of possible use cases. This promise is primarily based on algorithms that are unlikely to be viable over the coming decade. For near-term applications, quantum software needs to be carefully tailored to the hardware available. In this paper, we begin to explore whether near-term quantum computers could provide tools that are useful in the creation and implementation of computer games. The procedural generation of geopolitcal maps and their associated history is considered as a motivating example. This is performed by encoding a rudimentary decision making process for the nations within a quantum procedure that is well-suited to near-term devices. Given the novelty of quantum computing within the field of procedural generation, we also provide an introduction to the basic concepts involved.
 
 \end{abstract}
 
@@ -42,11 +42,11 @@ Quantum computers offer a radically new form of hardware, with radically new sof
 
 The hardware to run such algorithms is still very much in a prototype stage~\cite{quantum-volume}. Until now, hardware limitations have meant that it is far easier to simulate quantum devices on a standard laptop than to actually use the real versions. It is only with the current generation of 53 qubit devices from IBM and Google that quantum hardware can only be matched by days of dedicated usage on the world’s largest supercomputer~\cite{google-supremacy,ibm-summit}. Even so, the implementation of the ‘textbook’ algorithms requires the advent of fault-tolerant quantum computation, which is still some years away. Instead we are in an era of noisy quantum computers~\cite{nisq}, in which one very much has to design quantum algorithms at the machine code level and tailor the method to the exact device used. The path towards demonstrating an advantage over conventional computation is not so clear in this era, and is very much an active area of research~\cite{ibm-nisq}.
 
-The first example of a concrete and useful quantum advantage will likely occur for problems whose structure closely resembles the physics of the quantum hardware. The easiest task that one might give a quantum computer is to simulate a quantum computer (though one might dispute whether this would really constitute a simulation~\cite{horsman:13}). The next obvious, and more useful, task might then be to simulate other quantum systems of interest~\cite{feynman}. Indeed, quantum chemistry is a major focus for applications~\cite{kandala:17,ganzhorn:19} in the era of noisy quantum computers. But can we move beyond ideas of using quantum to simulate quantum, and instead find other simulations that would suit near-term quantum hardware? In this paper we aim to answer this question in the affirmative, for the case of procedural generation and AI for games.
+The first example of a concrete and useful quantum advantage will likely occur for problems whose structure closely resembles the physics of the quantum hardware. The easiest task that one might give a quantum computer is to simulate a quantum computer (though one might dispute whether this would really constitute a simulation~\cite{horsman:13}). The next obvious, and more useful, task might then be to simulate other quantum systems of interest~\cite{feynman}. Indeed, quantum chemistry is a major focus for applications research in the era of noisy quantum computers~\cite{kandala:17,ganzhorn:19} . But can we move beyond ideas of using quantum to simulate quantum, and instead find other simulations that would suit near-term quantum hardware? In this paper we aim to answer this question in the affirmative, for the case of procedural generation and AI for games.
 
-Before continuing, it is worth making a note on the scope of this work. The development of games using quantum computers can be viewed in parallel to the history of games for conventional computers. This history began in the 1950s, with games such as  \textit{Bertie the Brain},  \textit{Nimrod} and  \textit{OXO}. Each was a computer-based implementation of an existing game, and designed more as a showcase of technology, or for education or research, than to be fun. The 1960s brought the first unique play experiences, starting with 1962’s \textit{Spacewar!}, which allowed a player to take control of a space ship via a simulation of orbital mechanics. But it wasn’t until a decade later that the first major commercial success emerged: 1972’s  \textit{Pong}.
+Before continuing, it is worth making a note on the scope of this work. The development of games using quantum computers can be viewed in parallel to the history of games for conventional computers. This history began in the 1950s, with games such as  \textit{Bertie the Brain},  \textit{Nimrod} and  \textit{OXO}. Each was a computer-based implementation of an existing game, and designed more as a showcase of technology, or for education or research, than to be fun. The 1960s brought the first unique play experiences, starting with 1962’s \textit{Spacewar!}, which allowed a player to take control of a space ship via a simulation of orbital mechanics. It wasn’t until a decade later that the first major commercial success emerged: 1972’s  \textit{Pong}.
 
-For the case of games that use quantum computers, the last few years have reproduced some of the landmarks of the 1950s. Simple games, such as a variant of Battleships, have been made to serve as a starting point for those wanting to learn quantum programming~\cite{wootton:battleships}. A game was also developed to provide an interactive way to understand benchmarking of the hardware~\cite{wootton:awesomeness}. Many games have also been made that use quantum programming principles, but run on a simulator, in order to implement quantum-inspired game mechanics. Again, this is typically done for the purposes of education~\cite{wootton:history}. The aim of this paper is to move quantum games into the 1960s, by beginning to explore how quantum computers can actually be useful and provide unique new opportunities in game design.
+For the case of games that use quantum computers, the last few years have reproduced some of the landmarks of the 1950s. Simple games, such as a variant of \textit{Battleships}, have been made to serve as a starting point for those wanting to learn quantum programming~\cite{wootton:battleships}. A game was also developed to provide an interactive way to understand benchmarking of the hardware~\cite{wootton:awesomeness}. Many other games have also been made that use quantum programming principles, but run on a simulator, in order to implement quantum-inspired game mechanics~\cite{wootton:history}. Again, this is typically done for the purposes of education. The aim of this paper is to move quantum games into the 1960s, by beginning to explore how quantum computers might actually be useful and provide unique new opportunities in game design.
 
 \section{Quantum networks}
 
@@ -220,7 +220,7 @@ All runs are done using the same initial city placement, designed such that qubi
 \end{figure}
 
 
-The total map size used is an $L \times L$ grid for $L=256$. The radius of influence is set to $r=5$. When opponents are present, they are chosen by taking a bicoloring of the nodes of the coupling map. As such, each standard nation will border only opponents, and vice-versa. Equal numbers of samples are taken with the opponents as each of the two bicolorings. Data was taken for small numbers of nations (7, 9 and 11) using simulations of the quantum process (free of any imperfections). In each case, ten distinct runs were made. Twelve runs were also made on the \textit{ibmq\_cambridge} device, using all 28 qubits as nations.
+The total map size used is an $L \times L$ grid for $L=256$. The radius of influence is set to $r=5$. When opponents are present, they are chosen by taking a bicoloring of the nodes of the coupling map. As such, each standard nation will border only opponents, and vice-versa. Equal numbers of samples are taken with the opponents as each of the two bicolorings. Data was taken for small numbers of nations (7, 9 and 11) using simulations of the quantum process (free of any imperfections). In each case, ten distinct runs were made. Runs were also made on the 28 qubit \textit{ibmq\_cambridge} device and the 53 qubit \textit{ibmq\_rochester}, using all qubits as nations in both cases.
 
 \begin{figure}[htbp]
 \begin{center}
@@ -228,7 +228,8 @@ The total map size used is an $L \times L$ grid for $L=256$. The radius of influ
 \includegraphics[width=0.95\columnwidth]{figures/results_9.png}
 \includegraphics[width=0.95\columnwidth]{figures/results_11.png}
 \includegraphics[width=0.95\columnwidth]{figures/results_cambridge.png}
-\caption{Results for simulated runs on 7, 9 and 11 qubits, and a 28 qubit run on the \textit{ibmq\_cambridge} device. The mean nation area is shown for each of a sequence of 20 rounds. The length of the bars correspond to the standard deviation of the data at each point.}
+\includegraphics[width=0.95\columnwidth]{figures/results_rochester.png}
+\caption{Results for simulated runs on 7, 9 and 11 qubits, a 28 qubit run on the \textit{ibmq\_cambridge} device and a 53 qubit run on \textit{ibmq\_rochester}. The mean nation area is shown for each of a sequence of 20 rounds. The length of the bars correspond to the standard deviation of the data at each point.}
 \label{default}
 \end{center}
 \end{figure}
@@ -240,7 +241,7 @@ Example maps from a standard run, in which all nations are run in the same way, 
 \begin{figure}[htbp]
 \begin{center}
 \includegraphics[width=0.95\columnwidth]{figures/maps.png}
-\caption{Maps generated by a standard run on the \textit{ibmq\_rochester} device after 4, 9, 14 and 19 moves.}
+\caption{Maps generated by a standard run on the \textit{ibmq\_rochester} device after 5, 10, 15 and 20 moves.}
 \label{maps}
 \end{center}
 \end{figure}
@@ -249,9 +250,9 @@ Note the regular pattern of city placement is some areas. This is due to the cit
 
 \section{Conclusions}
 
-Quantum computers are a new tool to be explored for many applications, including procedural generation and game design. Here we presented a first step towards this. Specifically, the ability of near-term quantum computers to simulate the state of complex multipartite systems was used to simulate the evolution of a set of states.
+Quantum computers are a new tool to be explored for many applications, including procedural generation and game design. Here we presented a first step towards this. Specifically, the ability of near-term quantum computers to simulate the state of complex multipartite systems was used to simulate the evolution of a set of nations.
 
-The resulting AI is admittedly rudimentary. If we are to draw a parallel to the history of conventional computers in games, this work has more in common with the IBM's \textit{checkers} AI of the 1950's that the more recent victory of Watson at \textit{Jeopardy!}. Nevertheless, it is hoped that this work will serve as a motivation for further research and discussion.
+The resulting AI is admittedly rudimentary. If we are to draw a parallel to the history of conventional computers in games, this work has more in common with the IBM's \textit{checkers} AI of the 1950's that the more recent victory of Watson at \textit{Jeopardy!}. Nevertheless, it is hoped that this work will serve as a motivation for further research and discussion, and that the review of quantum computing provided here might inform similar work.
 
 \section*{Acknowledgment}
 
