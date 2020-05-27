@@ -223,7 +223,9 @@ class QuantumGraph ():
             return {pauli:expect[pauli]/R for pauli in expect}
         
         def get_basis(expect):
-            
+            '''
+            Get the eigenbasis of the density matric for a the given expectation values.
+            '''
             normalized_expect = normalize(expect)
             
             theta = arccos(normalized_expect['Z'])
