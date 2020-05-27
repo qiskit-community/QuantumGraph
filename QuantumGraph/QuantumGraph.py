@@ -224,7 +224,6 @@ class QuantumGraph ():
         
         def get_basis(expect):
             '''
-            Get the eigenbasis of the density matric for a the given expectation values.
             '''
             normalized_expect = normalize(expect)
             
