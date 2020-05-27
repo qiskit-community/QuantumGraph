@@ -28,7 +28,7 @@ for pauli1 in ['I','X','Y','Z']:
         
 class QuantumGraph ():
     
-    def __init__ (self,num_qubits,coupling_map=[],backend='simulator'):
+    def __init__ (self,num_qubits,coupling_map=[],device='simulator'):
         
         self.num_qubits = num_qubits
         
@@ -38,16 +38,25 @@ class QuantumGraph ():
                 if ([j,k] in coupling_map) or ([j,k] in coupling_map) or (not coupling_map):
                     self.coupling_map.append([j,k])
               
-        if backend=='simulator':
-            self.backend = Aer.get_backend('qasm_simulator')
-        elif backend in ['rochester', 'cambridge']:
-            backend_name = 'ibmq_' + backend
-            IBMQ.load_account()
-            for provider in IBMQ.providers():
-                for potential_backend in provider.backends():
-                    if potential_backend.name()==backend_name:
-                        self.backend = potential_backend
-            self.coupling_map = self.backend.configuration().coupling_map
+        if device is str:
+            if device=='simulator':
+                self.backend = Aer.get_backend('qasm_simulator')
+            else:
+                try:
+                    if device[0:4]=='ibmq':
+                        backend_name = device
+                    else
+                        backend_name = 'ibmq_' + backend
+                    IBMQ.load_account()
+                    for provider in IBMQ.providers():
+                        for potential_backend in provider.backends():
+                            if potential_backend.name()==backend_name:
+                                self.backend = potential_backend
+                    self.coupling_map = self.backend.configuration().coupling_map
+                except:
+                    print('The given device does not correspond to a valid IBMQ backend')
+        else:
+            device = backend
                                   
         self.qc = QuantumCircuit(self.num_qubits)
         
@@ -166,26 +175,24 @@ class QuantumGraph ():
             state1 = [conj(state0[1]),-conj(state0[0])]
             
             return [state0,state1]
-
-        if not self.backend=='depolarized':
         
-            current_basis = get_basis(self.get_state(qubit))
-            target_basis = get_basis(target_expect)
+        current_basis = get_basis(self.get_state(qubit))
+        target_basis = get_basis(target_expect)
 
-            U = array([ [0 for _ in range(2)] for _ in range(2) ], dtype=complex)
-            for i in range(2):
-                for j in range(2):
-                    for k in range(2):
-                        U[j][k] += target_basis[i][j]*conj(current_basis[i][k])
+        U = array([ [0 for _ in range(2)] for _ in range(2) ], dtype=complex)
+        for i in range(2):
+            for j in range(2):
+                for k in range(2):
+                    U[j][k] += target_basis[i][j]*conj(current_basis[i][k])
 
-            if fraction!=1:
-                U = pwr(U, fraction)
+        if fraction!=1:
+            U = pwr(U, fraction)
 
-            the,phi,lam = OneQubitEulerDecomposer().angles(U)
-            self.qc.u3(the,phi,lam,qubit)
+        the,phi,lam = OneQubitEulerDecomposer().angles(U)
+        self.qc.u3(the,phi,lam,qubit)
 
-            if update:
-                self.update_tomography()
+        if update:
+            self.update_tomography()
              
     def set_relationship(self,relationships,qubit0,qubit1,fraction=1, update=True):
 
@@ -204,104 +211,102 @@ class QuantumGraph ():
             else:
                 return [nan for amp in vec]
             
-        if not self.backend=='depolarized':
+        expect = {'II':1.0}
+        for pauli in self.expect[qubit0]:
+            expect['I'+pauli] = self.expect[qubit0][pauli]
+        for pauli in self.expect[qubit1]:
+            expect[pauli+'I'] = self.expect[qubit1][pauli]
+        pair = (min(qubit0,qubit1), max(qubit0,qubit1))
+        for pauli in self.expect[pair]:
+            if qubit0<qubit1:
+                expect[pauli] = self.expect[pair][pauli]
+            else:
+                expect[pauli[::-1]] = self.expect[pair][pauli]
 
-            expect = {'II':1.0}
-            for pauli in self.expect[qubit0]:
-                expect['I'+pauli] = self.expect[qubit0][pauli]
-            for pauli in self.expect[qubit1]:
-                expect[pauli+'I'] = self.expect[qubit1][pauli]
-            pair = (min(qubit0,qubit1), max(qubit0,qubit1))
-            for pauli in self.expect[pair]:
-                if qubit0<qubit1:
-                    expect[pauli] = self.expect[pair][pauli]
-                else:
-                    expect[pauli[::-1]] = self.expect[pair][pauli]
-            
-            rho = [[0 for _ in range(4)] for _ in range(4)]
-            for pauli in expect:
-                for r in range(4):
-                    for c in range(4):
-                        rho[r][c] += expect[pauli]*matrices[pauli][r][c]/4
-            
-            raw_vals,raw_vecs = la.eig(rho)
+        rho = [[0 for _ in range(4)] for _ in range(4)]
+        for pauli in expect:
+            for r in range(4):
+                for c in range(4):
+                    rho[r][c] += expect[pauli]*matrices[pauli][r][c]/4
 
-            vals = sorted([(val,k) for k,val in enumerate(raw_vals)], reverse=True)
-            vecs = [[ raw_vecs[j][k] for j in range(4)] for (val,k) in vals]
+        raw_vals,raw_vecs = la.eig(rho)
 
-            Pup = matrices['II']
-            for (pauli,sign) in relationships:
-                Pup = dot(Pup, (matrices['II']+sign*matrices[pauli])/2)
-            Pdown = (matrices['II'] - Pup)
+        vals = sorted([(val,k) for k,val in enumerate(raw_vals)], reverse=True)
+        vecs = [[ raw_vecs[j][k] for j in range(4)] for (val,k) in vals]
 
-            new_vecs = [[nan for _ in range(4)] for _ in range(4)]
-            valid = [False for _ in range(4)]
+        Pup = matrices['II']
+        for (pauli,sign) in relationships:
+            Pup = dot(Pup, (matrices['II']+sign*matrices[pauli])/2)
+        Pdown = (matrices['II'] - Pup)
 
-            # the first new vector comes from projecting the first eigenvector
-            new_vecs[0] = dot(Pup,vecs[0])
-            new_vecs[0] = normalize(new_vecs[0])
-            valid[0] = True not in [isnan(new_vecs[0][j]) for j in range(4)]
+        new_vecs = [[nan for _ in range(4)] for _ in range(4)]
+        valid = [False for _ in range(4)]
 
-            # if it didn't project away to nothing, the second is found by similarly projecting
-            # the second eigenvector and then finding the component orthogonal to new_vecs[0]
-            if valid[0]:
-                new_vecs[1] = dot(Pup,vecs[1])
-                new_vecs[1] -= inner(new_vecs[0],new_vecs[1])*new_vecs[0]
-                new_vecs[1] = normalize(new_vecs[1])
-                valid[1] = True not in [isnan(new_vecs[1][j]) for j in range(4)]
+        # the first new vector comes from projecting the first eigenvector
+        new_vecs[0] = dot(Pup,vecs[0])
+        new_vecs[0] = normalize(new_vecs[0])
+        valid[0] = True not in [isnan(new_vecs[0][j]) for j in range(4)]
 
-            # the process repeats for the next two, bit with the opposite projection
-            if valid[0] and valid[1]:
-                new_vecs.append(dot(Pdown,vecs[2]))
-                new_vecs[2] = normalize(new_vecs[2])
-                valid[2] = True not in [isnan(new_vecs[2][j]) for j in range(4)]
-            if valid[0] and valid[1] and valid[2]:    
-                new_vecs.append(dot(Pdown,vecs[3]))
-                new_vecs[3] -= inner(new_vecs[2],new_vecs[3])*new_vecs[2]
-                new_vecs[3] = normalize(new_vecs[3])
-                valid[3] = True not in [isnan(new_vecs[3][j]) for j in range(4)]
+        # if it didn't project away to nothing, the second is found by similarly projecting
+        # the second eigenvector and then finding the component orthogonal to new_vecs[0]
+        if valid[0]:
+            new_vecs[1] = dot(Pup,vecs[1])
+            new_vecs[1] -= inner(new_vecs[0],new_vecs[1])*new_vecs[0]
+            new_vecs[1] = normalize(new_vecs[1])
+            valid[1] = True not in [isnan(new_vecs[1][j]) for j in range(4)]
 
-            # if the first succeeds but any of the last three fail,
-            # replace them all with a random set of orthogonal gates
-            if valid[0] and False in [valid[1], valid[2], valid[3]]:
+        # the process repeats for the next two, bit with the opposite projection
+        if valid[0] and valid[1]:
+            new_vecs.append(dot(Pdown,vecs[2]))
+            new_vecs[2] = normalize(new_vecs[2])
+            valid[2] = True not in [isnan(new_vecs[2][j]) for j in range(4)]
+        if valid[0] and valid[1] and valid[2]:    
+            new_vecs.append(dot(Pdown,vecs[3]))
+            new_vecs[3] -= inner(new_vecs[2],new_vecs[3])*new_vecs[2]
+            new_vecs[3] = normalize(new_vecs[3])
+            valid[3] = True not in [isnan(new_vecs[3][j]) for j in range(4)]
 
-                new_vecs[1] = [ random() for _ in range(4) ]
-                new_vecs[1] -= inner(new_vecs[0],new_vecs[1])*new_vecs[0]
-                new_vecs[1] = normalize(new_vecs[1])
+        # if the first succeeds but any of the last three fail,
+        # replace them all with a random set of orthogonal gates
+        if valid[0] and False in [valid[1], valid[2], valid[3]]:
 
-                new_vecs[2] = [ random() for _ in range(4) ]
-                new_vecs[2] -= inner(new_vecs[0],new_vecs[2])*new_vecs[0]
-                new_vecs[2] -= inner(new_vecs[1],new_vecs[2])*new_vecs[1]
-                new_vecs[2] = normalize(new_vecs[2])
+            new_vecs[1] = [ random() for _ in range(4) ]
+            new_vecs[1] -= inner(new_vecs[0],new_vecs[1])*new_vecs[0]
+            new_vecs[1] = normalize(new_vecs[1])
 
-                new_vecs[3] = [ random() for _ in range(4) ]
-                new_vecs[3] -= inner(new_vecs[0],new_vecs[3])*new_vecs[0]
-                new_vecs[3] -= inner(new_vecs[1],new_vecs[3])*new_vecs[1]
-                new_vecs[3] -= inner(new_vecs[2],new_vecs[3])*new_vecs[2]
-                new_vecs[3] = normalize(new_vecs[3])
+            new_vecs[2] = [ random() for _ in range(4) ]
+            new_vecs[2] -= inner(new_vecs[0],new_vecs[2])*new_vecs[0]
+            new_vecs[2] -= inner(new_vecs[1],new_vecs[2])*new_vecs[1]
+            new_vecs[2] = normalize(new_vecs[2])
 
-            # a unitary is then construct to the old basis into the new
-            U = [[0 for _ in range(4)] for _ in range(4)]
-            for j in range(4):
-                U += outer(new_vecs[j],conj(vecs[j]))
+            new_vecs[3] = [ random() for _ in range(4) ]
+            new_vecs[3] -= inner(new_vecs[0],new_vecs[3])*new_vecs[0]
+            new_vecs[3] -= inner(new_vecs[1],new_vecs[3])*new_vecs[1]
+            new_vecs[3] -= inner(new_vecs[2],new_vecs[3])*new_vecs[2]
+            new_vecs[3] = normalize(new_vecs[3])
 
-            if fraction!=1:
-                U = pwr(U, fraction)
+        # a unitary is then construct to the old basis into the new
+        U = [[0 for _ in range(4)] for _ in range(4)]
+        for j in range(4):
+            U += outer(new_vecs[j],conj(vecs[j]))
 
-            try:
-                circuit = two_qubit_cnot_decompose(U)
-                gate = circuit.to_instruction()
-                done = True
-            except Exception as e:
-                print(e)
-                gate = None
+        if fraction!=1:
+            U = pwr(U, fraction)
 
-            if gate:
-                self.qc.append(gate,[qubit0,qubit1])
+        try:
+            circuit = two_qubit_cnot_decompose(U)
+            gate = circuit.to_instruction()
+            done = True
+        except Exception as e:
+            print(e)
+            gate = None
 
-            if update:
-                self.update_tomography()
+        if gate:
+            self.qc.append(gate,[qubit0,qubit1])
 
-            return gate
+        if update:
+            self.update_tomography()
+
+        return gate
         
         
