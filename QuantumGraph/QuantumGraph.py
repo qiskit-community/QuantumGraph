@@ -187,13 +187,20 @@ class QuantumGraph ():
         return relationship
     
     def set_state(self,target_expect,qubit,fraction=1,update=True):
+        '''
+        Rotates the given qubit towards the given target state.
         
+        Args:
+            target_state: Expectation values of the target state.
+            qubit: Qubit on which the operation is applied
+            fraction: fraction of the rotation toward the target state to apply.
+            update: whether to update the tomography after the rotation is added to the circuit.
+        '''
         def basis_change(pole,basis,qubit,dagger=False):
             '''
-                Returns the circuit required to change from the Z basis to the eigenbasis
-                of a particular Pauli. The opposite is done when `dagger=True`.
+            Returns the circuit required to change from the Z basis to the eigenbasis
+            of a particular Pauli. The opposite is done when `dagger=True`.
             '''
-            
             if pole=='+' and dagger==True:
                 self.qc.x(qubit)
             
@@ -208,8 +215,10 @@ class QuantumGraph ():
             if pole=='+' and dagger==False:
                 self.qc.x(qubit)
                     
-        
         def normalize(expect):
+            '''
+            Returns the given expectation values after normaliztion.
+            '''
             R = sqrt( expect['X']**2 + expect['Y']**2 + expect['Z']**2 )
             return {pauli:expect[pauli]/R for pauli in expect}
         
@@ -224,19 +233,21 @@ class QuantumGraph ():
             state1 = [conj(state0[1]),-conj(state0[0])]
             
             return [state0,state1]
-        
+
+        # determine the unitary which rotates as close to the target state as possible
         current_basis = get_basis(self.get_state(qubit))
         target_basis = get_basis(target_expect)
-
         U = array([ [0 for _ in range(2)] for _ in range(2) ], dtype=complex)
         for i in range(2):
             for j in range(2):
                 for k in range(2):
                     U[j][k] += target_basis[i][j]*conj(current_basis[i][k])
 
+        # get the unitary for the desired fraction of the rotation
         if fraction!=1:
             U = pwr(U, fraction)
 
+        # apply the corresponding gate
         the,phi,lam = OneQubitEulerDecomposer().angles(U)
         self.qc.u3(the,phi,lam,qubit)
 
