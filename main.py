@@ -13,9 +13,9 @@ from QuantumGraph.QuantumGraph import QuantumGraph
 
 
 ####################
-num_civs = 53
-# 'simulator', 'cambridge', 'rochester' or 'depolarized'
-backend = 'rochester'     
+num_civs = 5
+# 'simulator', 'cambridge', 'rochester'
+device = 'simulator'     
 # None or 'static'
 opponent_type = None           
 years = 20
@@ -152,12 +152,12 @@ def update():
         if (civ not in opponent) or (opponent_type not in ['static', 'random']):
             if civ in transfers:
                 # set losing civ to max defense
-                ai.set_state({'X':1,'Y':0,'Z':0}, civ, update=False)
+                ai.set_bloch({'X':1,'Y':0,'Z':0}, civ, update=False)
                 pair = [civ,transfers[civ]]
                 if pair in ai.coupling_map or pair[::-1] in ai.coupling_map:
                     # as much as possible, set up a <XZ>=<ZX>=1 state between loser and winner
                     
-                    ai.set_state({'X':1,'Y':0,'Z':0}, transfers[civ], update=False)
+                    ai.set_bloch({'X':1,'Y':0,'Z':0}, transfers[civ], update=False)
                     ai.qc.cz(transfers[civ],civ)
                     
                     
@@ -167,12 +167,12 @@ def update():
                 else:
                     frontier = 0
                 if frontier>(loss[civ]+gain[civ]): # when frontiers are dominant, increase exploration
-                    ai.set_state({'X':0,'Y':1,'Z':0}, civ, fraction=1/4, update=False)
+                    ai.set_bloch({'X':0,'Y':1,'Z':0}, civ, fraction=1/4, update=False)
                 else:
                     if loss[civ]>gain[civ]:  # when losses are dominant, increase defense
-                        ai.set_state({'X':1,'Y':0,'Z':0}, civ, fraction=min(1, loss[civ]/(np.pi*radius**2)), update=False)
+                        ai.set_bloch({'X':1,'Y':0,'Z':0}, civ, fraction=min(1, loss[civ]/(np.pi*radius**2)), update=False)
                     else: # when gains are dominant, increase aggression
-                        ai.set_state({'X':0,'Y':0,'Z':1}, civ, fraction=min(1, loss[civ]/(np.pi*radius**2)), update=False)           
+                        ai.set_bloch({'X':0,'Y':0,'Z':1}, civ, fraction=min(1, loss[civ]/(np.pi*radius**2)), update=False)           
     ai.update_tomography()
     
 def get_surplus(civ):
@@ -253,7 +253,7 @@ def get_tactic(civ):
         
     else:
     
-        rho_civ = ai.get_state(civ)
+        rho_civ = ai.get_bloch(civ)
 
         expect = {}
         for neighbour in border[civ]: 
@@ -333,7 +333,7 @@ colour = [ random_colour() for _ in range(num_civs) ]
 h = 0
 for _ in range(runs):
     
-    folder = str(num_civs) +'_'+ backend +'_'
+    folder = str(num_civs) +'_'+ device +'_'
     if opponent_type:
         folder += opponent_type + '_'
     else:
@@ -349,9 +349,9 @@ for _ in range(runs):
     else:
         opponent = []        
 
-    ai = QuantumGraph(num_civs,backend=backend)
+    ai = QuantumGraph(num_civs,device=device)
     for civ in range(num_civs):
-        ai.set_state({'X':1,'Y':1,'Z':1}, civ, update=False)
+        ai.set_bloch({'X':1,'Y':1,'Z':1}, civ, update=False)
 
     owner = {}
     influence = {}
