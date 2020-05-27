@@ -14,6 +14,12 @@ from scipy.linalg import fractional_matrix_power as pwr
 
 from random import random, choice
 
+try:
+    IBMQ.load_account()
+except:
+    print('An IBMQ account could not be loaded')
+
+
 import time
 
 # define the Pauli matrices in a dictionary
@@ -29,25 +35,34 @@ for pauli1 in ['I','X','Y','Z']:
 class QuantumGraph ():
     
     def __init__ (self,num_qubits,coupling_map=[],device='simulator'):
+        '''
+        Args:
+            num_qubits: The number of qubits, and hence the number of nodes in the graph.
+            coupling_map: A list of pairs of qubits, corresponding to edges in the graph.
+                If none is given, a fully connected graph is used.
+            device: The device on which the graph will be run. Can be given as a Qiskit backend object
+                or a description of the device as a string. If none is given, a local simulator is used.
+        '''
         
         self.num_qubits = num_qubits
         
+        # the coupling map consists of pairs [j,k] with the convention j<k
         self.coupling_map = []
         for j in range(self.num_qubits-1):
             for k in range(j+1,self.num_qubits):
                 if ([j,k] in coupling_map) or ([j,k] in coupling_map) or (not coupling_map):
                     self.coupling_map.append([j,k])
               
-        if device is str:
+        # use the `device` input to make a Qiskit backend object
+        if type(device) is str:
             if device=='simulator':
                 self.backend = Aer.get_backend('qasm_simulator')
             else:
                 try:
                     if device[0:4]=='ibmq':
                         backend_name = device
-                    else
+                    else:
                         backend_name = 'ibmq_' + backend
-                    IBMQ.load_account()
                     for provider in IBMQ.providers():
                         for potential_backend in provider.backends():
                             if potential_backend.name()==backend_name:
@@ -56,38 +71,66 @@ class QuantumGraph ():
                 except:
                     print('The given device does not correspond to a valid IBMQ backend')
         else:
-            device = backend
-                                  
-        self.qc = QuantumCircuit(self.num_qubits)
+            self.backend = device
         
+        # create the quantum circuit, and initialize the tomography
+        self.qc = QuantumCircuit(self.num_qubits)
         self.update_tomography()
         
     def update_tomography(self, shots=8192):
+        '''
+        Updates the tomography information of the graph for its current circuit, by running on the backend.
+        
+        Args:
+            shots: Number of shots to use.
+        '''
         
         def get_status(job):
+            '''
+            Get the status of a submitted job, mitigating for the fact that there may be a disconnection.
+            '''
             try:
                 job_status = job.status().value
             except:
                 job_status = 'Something is wrong. Perhaps disconnected.'
             return job_status
         
-        def submit_job(tomo_circs):
-            submitted = False
-            while submitted==False:
-                try:
-                    job = execute(tomo_circs, self.backend, shots=shots)
-                    submitted = True
-                except:
-                    print('Submission failed. Trying again in a minute')
-                    time.sleep(60)
-            return job
+        def submit_job(circs):
+            '''
+            Submit a job until it has been verified to have been submitted.
+            If the circuit is empty, this is done using the 'qasm_simulator' rather than the specified backend.
             
-        tomo_circs = pairwise_state_tomography_circuits(self.qc, self.qc.qregs[0])
-
-        if self.backend.configuration().simulator:
-            job = submit_job(tomo_circs)
-        else:
-            job = submit_job(tomo_circs)
+            Args:
+                circs: A list of circuits to run.
+            
+            Returns:
+                The job object of the submitted job.
+            '''
+            if len(self.qc.data)==0:
+                job = execute(circs, Aer.get_backend('qasm_simulator'), shots=shots)
+            else:
+                submitted = False
+                while submitted==False:
+                    try:
+                        job = execute(circs, self.backend, shots=shots)
+                        submitted = True
+                    except:
+                        print('Submission failed. Trying again in a minute')
+                        time.sleep(60)
+            return job
+        
+        def get_result(circs):
+            '''
+            Submits a list of circuits, waits until they run and then returns the results object.
+            
+            Args:
+                circs: A list of circuits to run.
+            
+            Returns:
+                The results object for the circuits that have been run.
+            '''
+            job = submit_job(circs)
+            time.sleep(1)
             while get_status(job)!='job has successfully run':
                 m = 0
                 while m<60 and get_status(job)!='job has successfully run':
@@ -96,15 +139,21 @@ class QuantumGraph ():
                     m += 1
                 if get_status(job)!='job has successfully run':
                     print('After 1 hour, job status is ' + get_status(job) + '. Another job will be submitted')
-                    job = submit_job(tomo_circs)
+                    job = submit_job(circs)
+            return job.result()
+
+        
+        tomo_circs = pairwise_state_tomography_circuits(self.qc, self.qc.qregs[0])
+        result = get_result(tomo_circs)
         
         self.tomography = {}
         for index, qc in enumerate(tomo_circs):
             basis = eval(qc.name)
+            counts = result().get_counts(index)
             self.tomography[basis] = {}
-            counts = job.result().get_counts(index)
             for string in counts:
-                self.tomography[basis][string] = counts[string]/shots 
+                self.tomography[basis][string] = counts[string]/shots
+                
     
     def get_state(self,qubit):
         state = {}
