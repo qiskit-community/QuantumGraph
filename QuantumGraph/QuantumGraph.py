@@ -79,7 +79,8 @@ class QuantumGraph ():
         
     def update_tomography(self, shots=8192):
         '''
-        Updates the tomography information of the graph for its current circuit, by running on the backend.
+        Updates the `counts` and `rho` attributes of the `QuantumGraph` object, which contain the two qubit tomography.
+        The update is persomed by running the current circuit on the backend.
         
         Args:
             shots: Number of shots to use.
@@ -146,29 +147,37 @@ class QuantumGraph ():
         tomo_circs = pairwise_state_tomography_circuits(self.qc, self.qc.qregs[0])
         result = get_result(tomo_circs)
         
-        self.tomography = {}
+        
+        self.counts = {}
         for index, qc in enumerate(tomo_circs):
             basis = eval(qc.name)
-            counts = result().get_counts(index)
-            self.tomography[basis] = {}
+            counts = result.get_counts(index)
+            self.counts[basis] = {}
             for string in counts:
-                self.tomography[basis][string] = counts[string]/shots
+                self.counts[basis][string] = counts[string]/shots
                 
+        fitter = PairwiseStateTomographyFitter(result, tomo_circs, self.qc.qregs[0])
+        self.rho = fitter.fit(output='density_matrix')                
     
-    def get_state(self,qubit):
-        state = {}
+    def get_bloch(self,qubit):
+        '''
+        Returns the X, Y and Z expectation values for the given qubit.
+        '''
+        expect = {}
         for pauli in ['X','Y','Z']:
-            for basis in self.tomography:
+            for basis in self.counts:
                 if basis[qubit]==pauli:
-                    probs = self.tomography[basis]
-            state[pauli] = 0
+                    probs = self.counts[basis]
+            expect[pauli] = 0
             for string in probs:
                 sign = 2*(string[-qubit-1]=='0')-1
-                state[pauli[0]] += sign*probs[string]
-        return state
+                expect[pauli] += sign*probs[string]
+        return expect
     
     def get_relationship(self,qubit1,qubit2):  
-        
+        '''
+        Returns the two qubit pauli expectation values for a given pair of qubits.
+        '''
         (j,k) = sorted([qubit1,qubit2])
         reverse = (j,k)!=(qubit1,qubit2)
         relationship = {}
@@ -177,16 +186,16 @@ class QuantumGraph ():
                 new_pauli = pauli[::-1]
             else:
                 new_pauli = pauli
-            for basis in self.tomography:
+            for basis in self.counts:
                 if basis[j]==pauli[0] and basis[k]==pauli[1]:
-                    probs = self.tomography[basis]
+                    probs = self.counts[basis]
             relationship[new_pauli] = 0
             for string in probs: 
                 sign = 2*(string[-j-1]==string[-k-1])-1
                 relationship[new_pauli] += sign*probs[string]
         return relationship
     
-    def set_state(self,target_expect,qubit,fraction=1,update=True):
+    def set_bloch(self,target_expect,qubit,fraction=1,update=True):
         '''
         Rotates the given qubit towards the given target state.
         
@@ -217,13 +226,14 @@ class QuantumGraph ():
                     
         def normalize(expect):
             '''
-            Returns the given expectation values after normaliztion.
+            Returns the given expectation values after normalization.
             '''
             R = sqrt( expect['X']**2 + expect['Y']**2 + expect['Z']**2 )
             return {pauli:expect[pauli]/R for pauli in expect}
         
         def get_basis(expect):
             '''
+            Get the eigenbasis of the density matrix for a the given expectation values.
             '''
             normalized_expect = normalize(expect)
             
@@ -236,7 +246,7 @@ class QuantumGraph ():
             return [state0,state1]
 
         # determine the unitary which rotates as close to the target state as possible
-        current_basis = get_basis(self.get_state(qubit))
+        current_basis = get_basis(self.get_bloch(qubit))
         target_basis = get_basis(target_expect)
         U = array([ [0 for _ in range(2)] for _ in range(2) ], dtype=complex)
         for i in range(2):
@@ -256,7 +266,11 @@ class QuantumGraph ():
             self.update_tomography()
              
     def set_relationship(self,relationships,qubit0,qubit1,fraction=1, update=True):
-
+        '''
+        
+        Warning: This doesn't fully work yet!
+        
+        '''
         zero = 0.001
 
         def inner(vec1,vec2):
@@ -271,26 +285,10 @@ class QuantumGraph ():
                 return vec/sqrt(inner(vec,vec))
             else:
                 return [nan for amp in vec]
-            
-        expect = {'II':1.0}
-        for pauli in self.expect[qubit0]:
-            expect['I'+pauli] = self.expect[qubit0][pauli]
-        for pauli in self.expect[qubit1]:
-            expect[pauli+'I'] = self.expect[qubit1][pauli]
-        pair = (min(qubit0,qubit1), max(qubit0,qubit1))
-        for pauli in self.expect[pair]:
-            if qubit0<qubit1:
-                expect[pauli] = self.expect[pair][pauli]
-            else:
-                expect[pauli[::-1]] = self.expect[pair][pauli]
 
-        rho = [[0 for _ in range(4)] for _ in range(4)]
-        for pauli in expect:
-            for r in range(4):
-                for c in range(4):
-                    rho[r][c] += expect[pauli]*matrices[pauli][r][c]/4
-
-        raw_vals,raw_vecs = la.eig(rho)
+        q0,q1 = min(qubit0,qubit1), max(qubit0,qubit1)
+        
+        raw_vals,raw_vecs = la.eig(self.rho[q0,q1])
 
         vals = sorted([(val,k) for k,val in enumerate(raw_vals)], reverse=True)
         vecs = [[ raw_vecs[j][k] for j in range(4)] for (val,k) in vals]
@@ -346,7 +344,7 @@ class QuantumGraph ():
             new_vecs[3] -= inner(new_vecs[2],new_vecs[3])*new_vecs[2]
             new_vecs[3] = normalize(new_vecs[3])
 
-        # a unitary is then construct to the old basis into the new
+        # a unitary is then construct to rotate the old basis into the new
         U = [[0 for _ in range(4)] for _ in range(4)]
         for j in range(4):
             U += outer(new_vecs[j],conj(vecs[j]))
