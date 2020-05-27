@@ -1,11 +1,12 @@
 from qiskit import QuantumCircuit, execute, Aer, IBMQ
-from qiskit.quantum_info.synthesis import euler_angles_1q
+from qiskit.quantum_info.synthesis import OneQubitEulerDecomposer
 from qiskit.quantum_info.synthesis.two_qubit_decompose import two_qubit_cnot_decompose
 
 from pairwise_tomography.pairwise_state_tomography_circuits import pairwise_state_tomography_circuits
 from pairwise_tomography.pairwise_fitter import PairwiseStateTomographyFitter
 
 from numpy import pi, cos, sin, sqrt, exp, arccos, arctan2, conj, array, kron, dot, outer, nan, isnan
+import numpy as np
 from numpy.random import normal
 
 from scipy import linalg as la
@@ -15,6 +16,7 @@ from random import random, choice
 
 import time
 
+# define the Pauli matrices in a dictionary
 matrices = {}
 matrices['I'] = [[1,0],[0,1]]
 matrices['X'] = [[0,1],[1,0]]
@@ -23,49 +25,6 @@ matrices['Z'] = [[1,0],[0,-1]]
 for pauli1 in ['I','X','Y','Z']:
     for pauli2 in ['I','X','Y','Z']:
         matrices[pauli1+pauli2] = kron(matrices[pauli1],matrices[pauli2])
-
-class Job ():
-    def __init__(self, circuits, counts):
-        self._circuits = circuits
-        self._counts = counts
-        
-    def result(self):
-        return Results(self._circuits, self._counts)
-
-class Results ():
-    def __init__(self, circuits, counts):
-        self._circuits = circuits
-        self._counts = counts
-        
-    def get_counts(self,index=0):
-        if type(index)==QuantumCircuit:
-            index = self._circuits.index(index)
-        return self._counts[index]
-
-def fake_execute(circuits, shots=1024):
-    
-    if type(circuits)!=list:
-        circuits = [circuits]
-    
-    counts = []
-    for qc in circuits:
-
-        n = qc.n_qubits
-        m = len((qc).clbits)
-        
-        counts_qc = {}
-        for _ in range(shots):
-            string = ''
-            for _ in range(m):
-                string += choice(['0','1'])
-            if string in counts_qc:
-                counts_qc[string] += 1
-            else:
-                counts_qc[string] = 1
-                        
-        counts.append(counts_qc)
-                
-    return Job(circuits,counts)
         
 class QuantumGraph ():
     
@@ -79,9 +38,7 @@ class QuantumGraph ():
                 if ([j,k] in coupling_map) or ([j,k] in coupling_map) or (not coupling_map):
                     self.coupling_map.append([j,k])
               
-        if backend=='depolarized':
-            self.backend = 'depolarized'
-        elif backend=='simulator':
+        if backend=='simulator':
             self.backend = Aer.get_backend('qasm_simulator')
         elif backend in ['rochester', 'cambridge']:
             backend_name = 'ibmq_' + backend
@@ -117,9 +74,8 @@ class QuantumGraph ():
             return job
             
         tomo_circs = pairwise_state_tomography_circuits(self.qc, self.qc.qregs[0])
-        if self.backend=='depolarized':
-            job = fake_execute(tomo_circs,shots=shots)
-        elif self.backend==Aer.get_backend('qasm_simulator'):
+
+        if self.backend.configuration().simulator:
             job = submit_job(tomo_circs)
         else:
             job = submit_job(tomo_circs)
@@ -225,7 +181,7 @@ class QuantumGraph ():
             if fraction!=1:
                 U = pwr(U, fraction)
 
-            the,phi,lam = euler_angles_1q(U)
+            the,phi,lam = OneQubitEulerDecomposer().angles(U)
             self.qc.u3(the,phi,lam,qubit)
 
             if update:
