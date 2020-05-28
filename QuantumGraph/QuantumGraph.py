@@ -157,7 +157,7 @@ class QuantumGraph ():
         for q in range(self.num_qubits):
             if q!=qubit:
                 (q0,q1) = sorted([q,qubit])
-                pair_expect = self.tomography.fit(output='expectation')[q0,q1]
+                pair_expect = self.tomography.fit(output='expectation',pairs_list=[(q0,q1)])[q0,q1]
                 for pauli in expect:
                     pauli_pair = (pauli,'I')
                     if q0!=qubit:
@@ -171,7 +171,7 @@ class QuantumGraph ():
         '''
         (q0,q1) = sorted([qubit1,qubit2])
         reverse = (q0,q1)!=(qubit1,qubit2)
-        pair_expect = self.tomography.fit(output='expectation')[q0,q1]
+        pair_expect = self.tomography.fit(output='expectation',pairs_list=[(q0,q1)])[q0,q1]
         relationship = {}
         for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
             if reverse:
@@ -281,7 +281,7 @@ class QuantumGraph ():
 
         (q0,q1) = sorted([qubit0,qubit1])
         
-        rho = self.tomography.fit(output='density_matrix')[q0,q1]#,pairs_list=[(q0,q1)])[q0,q1]
+        rho = self.tomography.fit(output='density_matrix',pairs_list=[(q0,q1)])[q0,q1]
         raw_vals,raw_vecs = la.eigh(rho)
 
         vals = sorted([(val,k) for k,val in enumerate(raw_vals)], reverse=True)
