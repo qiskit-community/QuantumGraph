@@ -79,7 +79,7 @@ class QuantumGraph ():
         
     def update_tomography(self, shots=8192):
         '''
-        Updates the `counts` and `rho` attributes of the `QuantumGraph` object, which contain the two qubit tomography.
+        Updates the `tomography` attribute of the `QuantumGraph` object, which contain the two qubit tomography.
         The update is persomed by running the current circuit on the backend.
         
         Args:
@@ -145,54 +145,40 @@ class QuantumGraph ():
 
         
         tomo_circs = pairwise_state_tomography_circuits(self.qc, self.qc.qregs[0])
-        result = get_result(tomo_circs)
+        tomo_results = get_result(tomo_circs)
+        self.tomography = PairwiseStateTomographyFitter(tomo_results, tomo_circs, self.qc.qregs[0]) 
         
-        
-        self.counts = {}
-        for index, qc in enumerate(tomo_circs):
-            basis = eval(qc.name)
-            counts = result.get_counts(index)
-            self.counts[basis] = {}
-            for string in counts:
-                self.counts[basis][string] = counts[string]/shots
-                
-        fitter = PairwiseStateTomographyFitter(result, tomo_circs, self.qc.qregs[0])
-        self.rho = fitter.fit(output='density_matrix')                
     
     def get_bloch(self,qubit):
         '''
         Returns the X, Y and Z expectation values for the given qubit.
         '''
-        expect = {}
-        for pauli in ['X','Y','Z']:
-            for basis in self.counts:
-                if basis[qubit]==pauli:
-                    probs = self.counts[basis]
-            expect[pauli] = 0
-            for string in probs:
-                sign = 2*(string[-qubit-1]=='0')-1
-                expect[pauli] += sign*probs[string]
+        expect = {'X':0, 'Y':0, 'Z':0}
+        for q in range(self.num_qubits):
+            if q!=qubit:
+                (q0,q1) = sorted([q,qubit])
+                pair_expect = self.tomography.fit(output='expectation')[q0,q1]
+                for pauli in expect:
+                    pauli_pair = (pauli,'I')
+                    if q0!=qubit:
+                        pauli_pair = tuple(list((pauli,'I'))[::-1])
+                    expect[pauli] += pair_expect[pauli_pair]/(self.num_qubits-1)     
         return expect
     
     def get_relationship(self,qubit1,qubit2):  
         '''
         Returns the two qubit pauli expectation values for a given pair of qubits.
         '''
-        (j,k) = sorted([qubit1,qubit2])
-        reverse = (j,k)!=(qubit1,qubit2)
+        (q0,q1) = sorted([qubit1,qubit2])
+        reverse = (q0,q1)!=(qubit1,qubit2)
+        pair_expect = self.tomography.fit(output='expectation')[q0,q1]
         relationship = {}
         for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
             if reverse:
                 new_pauli = pauli[::-1]
             else:
                 new_pauli = pauli
-            for basis in self.counts:
-                if basis[j]==pauli[0] and basis[k]==pauli[1]:
-                    probs = self.counts[basis]
-            relationship[new_pauli] = 0
-            for string in probs: 
-                sign = 2*(string[-j-1]==string[-k-1])-1
-                relationship[new_pauli] += sign*probs[string]
+            relationship[new_pauli] = pair_expect[pauli[0],pauli[1]]
         return relationship
     
     def set_bloch(self,target_expect,qubit,fraction=1,update=True):
@@ -285,10 +271,18 @@ class QuantumGraph ():
                 return vec/sqrt(inner(vec,vec))
             else:
                 return [nan for amp in vec]
+            
+        def random_vector(ortho_vecs=[]):
+            vec = np.array([ 2*random()-1 for _ in range(4) ],dtype='complex')
+            vec[0] = abs(vec[0])
+            for ortho_vec in ortho_vecs:
+                vec -= inner(ortho_vec,vec)*ortho_vec
+            return normalize(vec) 
 
-        q0,q1 = min(qubit0,qubit1), max(qubit0,qubit1)
+        (q0,q1) = sorted([qubit0,qubit1])
         
-        raw_vals,raw_vecs = la.eig(self.rho[q0,q1])
+        rho = self.tomography.fit(output='density_matrix')[q0,q1]#,pairs_list=[(q0,q1)])[q0,q1]
+        raw_vals,raw_vecs = la.eigh(rho)
 
         vals = sorted([(val,k) for k,val in enumerate(raw_vals)], reverse=True)
         vecs = [[ raw_vecs[j][k] for j in range(4)] for (val,k) in vals]
@@ -302,56 +296,47 @@ class QuantumGraph ():
         valid = [False for _ in range(4)]
 
         # the first new vector comes from projecting the first eigenvector
-        new_vecs[0] = dot(Pup,vecs[0])
-        new_vecs[0] = normalize(new_vecs[0])
-        valid[0] = True not in [isnan(new_vecs[0][j]) for j in range(4)]
+        vec = vecs[0]
+        while not valid[0]:
+            new_vecs[0] = normalize(dot(Pup,vec))
+            valid[0] = True not in [isnan(new_vecs[0][j]) for j in range(4)]
+            # if that doesn't work, a random vector is projected instead
+            vec = random_vector()
 
-        # if it didn't project away to nothing, the second is found by similarly projecting
-        # the second eigenvector and then finding the component orthogonal to new_vecs[0]
-        if valid[0]:
-            new_vecs[1] = dot(Pup,vecs[1])
-            new_vecs[1] -= inner(new_vecs[0],new_vecs[1])*new_vecs[0]
+        # the second is found by similarly projecting the second eigenvector
+        # and then finding the component orthogonal to new_vecs[0]
+        vec = dot(Pup,vecs[1])
+        while not valid[1]:
+            new_vecs[1] = vec - inner(new_vecs[0],vec)*new_vecs[0]
             new_vecs[1] = normalize(new_vecs[1])
             valid[1] = True not in [isnan(new_vecs[1][j]) for j in range(4)]
+            # if that doesn't work, start with a random one instead
+            vec = random_vector()
 
-        # the process repeats for the next two, bit with the opposite projection
-        if valid[0] and valid[1]:
-            new_vecs.append(dot(Pdown,vecs[2]))
-            new_vecs[2] = normalize(new_vecs[2])
+        # the third is the projection of the third eigenvector to the subpace orthogonal to the first two
+        vec = vecs[2]
+        for j in range(2):
+            vec -= inner(new_vecs[j],vec)*new_vecs[j]
+        while not valid[2]:
+            new_vecs[2] = normalize(vec)
             valid[2] = True not in [isnan(new_vecs[2][j]) for j in range(4)]
-        if valid[0] and valid[1] and valid[2]:    
-            new_vecs.append(dot(Pdown,vecs[3]))
-            new_vecs[3] -= inner(new_vecs[2],new_vecs[3])*new_vecs[2]
-            new_vecs[3] = normalize(new_vecs[3])
+            # if that doesn't work, use a random vector orthogonal to the first two
+            vec = random_vector(ortho_vecs=[new_vecs[0],new_vecs[1]])
+
+        # the last is just orthogonal to the rest
+        vec = normalize(dot(Pdown,vecs[3]))
+        while not valid[3]:
+            new_vecs[3] = random_vector(ortho_vecs=[new_vecs[0],new_vecs[1],new_vecs[2]])
             valid[3] = True not in [isnan(new_vecs[3][j]) for j in range(4)]
-
-        # if the first succeeds but any of the last three fail,
-        # replace them all with a random set of orthogonal gates
-        if valid[0] and False in [valid[1], valid[2], valid[3]]:
-
-            new_vecs[1] = [ random() for _ in range(4) ]
-            new_vecs[1] -= inner(new_vecs[0],new_vecs[1])*new_vecs[0]
-            new_vecs[1] = normalize(new_vecs[1])
-
-            new_vecs[2] = [ random() for _ in range(4) ]
-            new_vecs[2] -= inner(new_vecs[0],new_vecs[2])*new_vecs[0]
-            new_vecs[2] -= inner(new_vecs[1],new_vecs[2])*new_vecs[1]
-            new_vecs[2] = normalize(new_vecs[2])
-
-            new_vecs[3] = [ random() for _ in range(4) ]
-            new_vecs[3] -= inner(new_vecs[0],new_vecs[3])*new_vecs[0]
-            new_vecs[3] -= inner(new_vecs[1],new_vecs[3])*new_vecs[1]
-            new_vecs[3] -= inner(new_vecs[2],new_vecs[3])*new_vecs[2]
-            new_vecs[3] = normalize(new_vecs[3])
-
-        # a unitary is then construct to rotate the old basis into the new
+            
+        # a unitary is then constructed to rotate the old basis into the new
         U = [[0 for _ in range(4)] for _ in range(4)]
         for j in range(4):
             U += outer(new_vecs[j],conj(vecs[j]))
 
         if fraction!=1:
             U = pwr(U, fraction)
-
+            
         try:
             circuit = two_qubit_cnot_decompose(U)
             gate = circuit.to_instruction()
