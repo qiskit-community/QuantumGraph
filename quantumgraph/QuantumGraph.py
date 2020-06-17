@@ -231,6 +231,11 @@ class QuantumGraph ():
             
             return [state0,state1]
 
+        # add in missing zeros
+        for pauli in ['X', 'Y', 'Z']:
+            if pauli not in target_expect:
+                target_expect[pauli] = 0
+        
         # determine the unitary which rotates as close to the target state as possible
         current_basis = get_basis(self.get_bloch(qubit))
         target_basis = get_basis(target_expect)
@@ -253,9 +258,13 @@ class QuantumGraph ():
              
     def set_relationship(self,relationships,qubit0,qubit1,fraction=1, update=True):
         '''
+        Rotates the given pair of qubits towards the given target expectation values.
         
-        Warning: This doesn't fully work yet!
-        
+        Args:
+            target_state: Target expectation values.
+            qubit0, qubit1: Qubits on which the operation is applied
+            fraction: fraction of the rotation toward the target state to apply.
+            update: whether to update the tomography after the rotation is added to the circuit.
         '''
         zero = 0.001
 
@@ -288,7 +297,7 @@ class QuantumGraph ():
         vecs = [[ raw_vecs[j][k] for j in range(4)] for (val,k) in vals]
 
         Pup = matrices['II']
-        for (pauli,sign) in relationships:
+        for (pauli,sign) in relationships.items():
             Pup = dot(Pup, (matrices['II']+sign*matrices[pauli])/2)
         Pdown = (matrices['II'] - Pup)
 
