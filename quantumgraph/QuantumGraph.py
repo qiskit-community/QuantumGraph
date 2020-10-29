@@ -145,13 +145,9 @@ class QuantumGraph ():
             return job.result()
 
         
-        t = time.time()
         tomo_circs = pairwise_state_tomography_circuits(self.qc, self.qc.qregs[0])
-        print(time.time()-t)
         tomo_results = get_result(tomo_circs)
-        print(time.time()-t)
         self.tomography = PairwiseStateTomographyFitter(tomo_results, tomo_circs, self.qc.qregs[0])
-        print(time.time()-t)
         
     
     def get_bloch(self,qubit):
