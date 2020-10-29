@@ -131,22 +131,23 @@ class QuantumGraph ():
                 The results object for the circuits that have been run.
             '''
             job = submit_job(circs)
-            time.sleep(1)
-            while get_status(job)!='job has successfully run':
-                m = 0
-                while m<60 and get_status(job)!='job has successfully run':
-                    time.sleep(60)
-                    print(get_status(job))
-                    m += 1
-                if get_status(job)!='job has successfully run':
-                    print('After 1 hour, job status is ' + get_status(job) + '. Another job will be submitted')
-                    job = submit_job(circs)
+            if job.backend().name()!='qasm_simulator':
+                time.sleep(1)
+                while get_status(job)!='job has successfully run':
+                    m = 0
+                    while m<60 and get_status(job)!='job has successfully run':
+                        time.sleep(60)
+                        print(get_status(job))
+                        m += 1
+                    if get_status(job)!='job has successfully run':
+                        print('After 1 hour, job status is ' + get_status(job) + '. Another job will be submitted')
+                        job = submit_job(circs)
             return job.result()
 
         
         tomo_circs = pairwise_state_tomography_circuits(self.qc, self.qc.qregs[0])
         tomo_results = get_result(tomo_circs)
-        self.tomography = PairwiseStateTomographyFitter(tomo_results, tomo_circs, self.qc.qregs[0]) 
+        self.tomography = PairwiseStateTomographyFitter(tomo_results, tomo_circs, self.qc.qregs[0])
         
     
     def get_bloch(self,qubit):
