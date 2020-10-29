@@ -14,13 +14,17 @@ from scipy.linalg import fractional_matrix_power as pwr
 
 from random import random, choice
 
+import time
+
+import os
+if os.getenv('QISKIT_IN_PARALLEL') is None:
+    os.environ['QISKIT_IN_PARALLEL'] = 'TRUE'
+
 try:
     IBMQ.load_account()
 except:
     print('An IBMQ account could not be loaded')
 
-
-import time
 
 # define the Pauli matrices in a dictionary
 matrices = {}
@@ -154,16 +158,20 @@ class QuantumGraph ():
         '''
         Returns the X, Y and Z expectation values for the given qubit.
         '''
-        expect = {'X':0, 'Y':0, 'Z':0}
-        for q in range(self.num_qubits):
-            if q!=qubit:
-                (q0,q1) = sorted([q,qubit])
-                pair_expect = self.tomography.fit(output='expectation',pairs_list=[(q0,q1)])[q0,q1]
-                for pauli in expect:
-                    pauli_pair = (pauli,'I')
-                    if q0!=qubit:
-                        pauli_pair = tuple(list((pauli,'I'))[::-1])
-                    expect[pauli] += pair_expect[pauli_pair]/(self.num_qubits-1)     
+        
+        if qubit==self.num_qubits-1:
+            q0,q1 = qubit-1,qubit
+        else:
+            q0,q1 = qubit,qubit+1
+
+        expect = {}
+        pair_expect = self.tomography.fit(output='expectation',pairs_list=[(q0,q1)])[q0,q1]
+        for pauli in ['X', 'Y', 'Z']:
+            pauli_pair = (pauli,'I')
+            if q0!=qubit:
+                pauli_pair = tuple(list((pauli,'I'))[::-1])
+            expect[pauli] = pair_expect[pauli_pair]
+                    
         return expect
     
     def get_relationship(self,qubit1,qubit2):  
