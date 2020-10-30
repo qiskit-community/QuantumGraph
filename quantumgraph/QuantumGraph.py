@@ -5,6 +5,8 @@ from qiskit.quantum_info.synthesis.two_qubit_decompose import two_qubit_cnot_dec
 from pairwise_tomography.pairwise_state_tomography_circuits import pairwise_state_tomography_circuits
 from pairwise_tomography.pairwise_fitter import PairwiseStateTomographyFitter
 
+from .ExpectationValue import ExpectationValue
+
 from numpy import pi, cos, sin, sqrt, exp, arccos, arctan2, conj, array, kron, dot, outer, nan, isnan
 import numpy as np
 from numpy.random import normal
@@ -16,25 +18,33 @@ from random import random, choice
 
 import time
 
-import os
-if os.getenv('QISKIT_IN_PARALLEL') is None:
-    os.environ['QISKIT_IN_PARALLEL'] = 'TRUE'
-
 try:
     IBMQ.load_account()
 except:
     print('An IBMQ account could not be loaded')
 
 
+# used in workaround for qiskit-aer issue 1015
+class FakeResult():
+    def __init__(self):
+        self.circuits = []
+        self.counts = []
+    def set_counts(self,circ,counts):
+        self.circuits.append(circ)
+        self.counts.append(counts)
+    def get_counts(self,circ):
+        return self.counts[self.circuits.index(circ)]
+    
+    
 # define the Pauli matrices in a dictionary
 matrices = {}
-matrices['I'] = [[1,0],[0,1]]
-matrices['X'] = [[0,1],[1,0]]
-matrices['Y'] = [[0,-1j],[1j,0]]
-matrices['Z'] = [[1,0],[0,-1]]
+matrices['I'] = np.identity(2,dtype='complex')
+matrices['X'] = np.array([[0,1+0j],[1+0j,0]])
+matrices['Y'] = np.array([[0,-1j],[1j,0]])
+matrices['Z'] = np.array([[1+0j,0],[0,-1+0j]])
 for pauli1 in ['I','X','Y','Z']:
     for pauli2 in ['I','X','Y','Z']:
-        matrices[pauli1+pauli2] = kron(matrices[pauli1],matrices[pauli2])
+        matrices[pauli1+pauli2] = kron(matrices[pauli2],matrices[pauli1])
         
 class QuantumGraph ():
     
@@ -134,24 +144,36 @@ class QuantumGraph ():
             Returns:
                 The results object for the circuits that have been run.
             '''
-            job = submit_job(circs)
-            if job.backend().name()!='qasm_simulator':
-                time.sleep(1)
-                while get_status(job)!='job has successfully run':
-                    m = 0
-                    while m<60 and get_status(job)!='job has successfully run':
-                        time.sleep(60)
-                        print(get_status(job))
-                        m += 1
-                    if get_status(job)!='job has successfully run':
-                        print('After 1 hour, job status is ' + get_status(job) + '. Another job will be submitted')
-                        job = submit_job(circs)
-            return job.result()
+            if self.backend.name()=='qasm_simulator' or len(self.qc.data)==0:
+                result = FakeResult()
+                for circ in circs:
+                    counts = execute(circ, Aer.get_backend('qasm_simulator'), shots=shots).result().get_counts()
+                    result.set_counts(circ,counts)
+                return result
+            else:
+                job = submit_job(circs)
+                if job.backend().name()!='qasm_simulator':
+                    time.sleep(1)
+                    while get_status(job)!='job has successfully run':
+                        m = 0
+                        while m<60 and get_status(job)!='job has successfully run':
+                            time.sleep(60)
+                            print(get_status(job))
+                            m += 1
+                        if get_status(job)!='job has successfully run':
+                            print('After 1 hour, job status is ' + get_status(job) + '. Another job will be submitted')
+                            job = submit_job(circs)
+                return job.result()
 
-        
-        tomo_circs = pairwise_state_tomography_circuits(self.qc, self.qc.qregs[0])
-        tomo_results = get_result(tomo_circs)
-        self.tomography = PairwiseStateTomographyFitter(tomo_results, tomo_circs, self.qc.qregs[0])
+        if type(self.backend)==ExpectationValue:
+            self.backend = ExpectationValue(self.backend.n,
+                                            k=self.backend.k,
+                                            pairs=self.backend.pairs)
+            self.backend.apply_circuit(self.qc)
+        else:
+            tomo_circs = pairwise_state_tomography_circuits(self.qc, self.qc.qregs[0])
+            tomo_results = get_result(tomo_circs)
+            self.tomography = PairwiseStateTomographyFitter(tomo_results, tomo_circs, self.qc.qregs[0])
         
     
     def get_bloch(self,qubit):
@@ -159,35 +181,48 @@ class QuantumGraph ():
         Returns the X, Y and Z expectation values for the given qubit.
         '''
         
-        if qubit==self.num_qubits-1:
-            q0,q1 = qubit-1,qubit
-        else:
-            q0,q1 = qubit,qubit+1
-
         expect = {}
-        pair_expect = self.tomography.fit(output='expectation',pairs_list=[(q0,q1)])[q0,q1]
-        for pauli in ['X', 'Y', 'Z']:
-            pauli_pair = (pauli,'I')
-            if q0!=qubit:
-                pauli_pair = tuple(list((pauli,'I'))[::-1])
-            expect[pauli] = pair_expect[pauli_pair]
+        if type(self.backend)==ExpectationValue:
+            full_pauli = ['I']*self.num_qubits
+            for pauli in ['X', 'Y', 'Z']:
+                full_pauli[qubit] = pauli
+                expect[pauli] = self.backend.pauli_decomp[''.join(full_pauli)]
+        else:
+            if qubit==self.num_qubits-1:
+                q0,q1 = qubit-1,qubit
+            else:
+                q0,q1 = qubit,qubit+1
+            pair_expect = self.tomography.fit(output='expectation',pairs_list=[(q0,q1)])[q0,q1]
+            for pauli in ['X', 'Y', 'Z']:
+                pauli_pair = (pauli,'I')
+                if q0!=qubit:
+                    pauli_pair = tuple(list((pauli,'I'))[::-1])
+                expect[pauli] = pair_expect[pauli_pair]
                     
         return expect
     
-    def get_relationship(self,qubit1,qubit2):  
+    def get_relationship(self,qubit0,qubit1):  
         '''
         Returns the two qubit pauli expectation values for a given pair of qubits.
         '''
-        (q0,q1) = sorted([qubit1,qubit2])
-        reverse = (q0,q1)!=(qubit1,qubit2)
-        pair_expect = self.tomography.fit(output='expectation',pairs_list=[(q0,q1)])[q0,q1]
         relationship = {}
-        for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
-            if reverse:
-                new_pauli = pauli[::-1]
-            else:
-                new_pauli = pauli
-            relationship[new_pauli] = pair_expect[pauli[0],pauli[1]]
+        if type(self.backend)==ExpectationValue:
+            full_pauli = ['I']*self.num_qubits
+            for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
+                full_pauli[qubit0] = pauli[0]
+                full_pauli[qubit1] = pauli[1]
+                relationship[pauli] = self.backend.pauli_decomp[''.join(full_pauli)]
+        else:
+            (q0,q1) = sorted([qubit0,qubit1])
+            reverse = (q0,q1)!=(qubit0,qubit1)
+            pair_expect = self.tomography.fit(output='expectation',pairs_list=[(q0,q1)])[q0,q1]
+            relationship = {}
+            for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
+                if reverse:
+                    new_pauli = pauli[::-1]
+                else:
+                    new_pauli = pauli
+                relationship[new_pauli] = pair_expect[pauli[0],pauli[1]]
         return relationship
     
     def set_bloch(self,target_expect,qubit,fraction=1,update=True):
@@ -286,7 +321,7 @@ class QuantumGraph ():
         def normalize(vec):
             renorm = sqrt(inner(vec,vec))
             if abs((renorm*conj(renorm)))>zero:
-                return vec/sqrt(inner(vec,vec))
+                return np.copy(vec)/renorm
             else:
                 return [nan for amp in vec]
             
@@ -295,17 +330,29 @@ class QuantumGraph ():
             vec[0] = abs(vec[0])
             for ortho_vec in ortho_vecs:
                 vec -= inner(ortho_vec,vec)*ortho_vec
-            return normalize(vec) 
-
-        (q0,q1) = sorted([qubit0,qubit1])
+            return normalize(vec)
         
-        rho = self.tomography.fit(output='density_matrix',pairs_list=[(q0,q1)])[q0,q1]
-        raw_vals,raw_vecs = la.eigh(rho)
+        def get_rho(qubit0,qubit1):
+            if type(self.backend)==ExpectationValue:
+                rel = self.get_relationship(qubit0,qubit1)
+                b0 = self.get_bloch(qubit0)
+                b1 = self.get_bloch(qubit1)
+                rho = np.identity(4,dtype='complex128')
+                for pauli in ['X','Y','Z']:
+                    rho += b0[pauli]*matrices[pauli+'I']
+                    rho += b1[pauli]*matrices['I'+pauli]
+                for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
+                    rho += rel[pauli]*matrices[pauli]
+                return rho/4
+            else:
+                (q0,q1) = sorted([qubit0,qubit1])                                     
+                return self.tomography.fit(output='density_matrix',pairs_list=[(q0,q1)])[q0,q1]
 
+        raw_vals,raw_vecs = la.eigh( get_rho(qubit0,qubit1) )
         vals = sorted([(val,k) for k,val in enumerate(raw_vals)], reverse=True)
         vecs = [[ raw_vecs[j][k] for j in range(4)] for (val,k) in vals]
-
-        Pup = matrices['II']
+        
+        Pup = np.identity(4,dtype='complex')
         for (pauli,sign) in relationships.items():
             Pup = dot(Pup, (matrices['II']+sign*matrices[pauli])/2)
         Pdown = (matrices['II'] - Pup)
@@ -314,13 +361,13 @@ class QuantumGraph ():
         valid = [False for _ in range(4)]
 
         # the first new vector comes from projecting the first eigenvector
-        vec = vecs[0]
+        vec = np.copy(vecs[0])
         while not valid[0]:
             new_vecs[0] = normalize(dot(Pup,vec))
             valid[0] = True not in [isnan(new_vecs[0][j]) for j in range(4)]
             # if that doesn't work, a random vector is projected instead
             vec = random_vector()
-
+            
         # the second is found by similarly projecting the second eigenvector
         # and then finding the component orthogonal to new_vecs[0]
         vec = dot(Pup,vecs[1])
@@ -332,7 +379,7 @@ class QuantumGraph ():
             vec = random_vector()
 
         # the third is the projection of the third eigenvector to the subpace orthogonal to the first two
-        vec = vecs[2]
+        vec = np.copy(vecs[2])
         for j in range(2):
             vec -= inner(new_vecs[j],vec)*new_vecs[j]
         while not valid[2]:
