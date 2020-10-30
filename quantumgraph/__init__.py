@@ -1,2 +1,3 @@
 from .QuantumGraph import QuantumGraph
+from .ExpectationValue import ExpectationValue
 from .GraphMitigation import pairwise_mitigation_circuits, PairwiseMitigationFitter

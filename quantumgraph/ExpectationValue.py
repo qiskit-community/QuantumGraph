@@ -1,7 +1,7 @@
 import numpy as np
 from qiskit import QuantumCircuit, transpile
 import itertools, copy
-
+import random
 
 class ExpectationValue():
     
@@ -218,3 +218,79 @@ class ExpectationValue():
                 for pp in ev.pauli_decomp:
                     if abs(ev.pauli_decomp[pp])>0.01:
                         print(pp,ev.pauli_decomp[pp])
+                        
+    def get_counts(self,shots=1024,samples=8192):
+
+        def log(number):
+            if number==0:
+                return -np.Inf
+            else:
+                return np.log(number)
+
+        samples = max(samples, 2*shots)
+        cycle = int((samples/2)/shots) 
+        n = self.n
+
+        # prob[j] prob of qubit j being in state 0
+        prob = [0 for j in range(n)]
+        Z = [0 for j in range(n)]
+        ZZ = [{} for j in range(n)]
+        for string in self.pauli_decomp:
+            support = [j for j,char in enumerate(string) if char=='Z']
+            if 'X' not in string and 'Y' not in string:
+                if len(support)==1:
+                    Z[support[0]] = self.pauli_decomp[string]
+                    prob[support[0]] = (1+self.pauli_decomp[string])/2
+                elif len(support)==2:
+                    for [j,k] in [support,support[::-1]]:
+                        ZZ[j][k] = self.pauli_decomp[string]
+
+        # create an initial bit string
+        bits = [random.choices(['0','1'],weights=[prob[j],1-prob[j]])[0] for j in range(n)]
+
+        counts = {}
+        shots_taken = 0
+        sample = 0
+        while shots_taken<shots:
+
+            j = random.choice(range(n))
+
+            current = bits[j]
+            proposed = str((int(bits[j])+1)%2)
+
+            # P[b] is the prob that qubit j is in state b, and its neighbours are in whatselfer state they are in
+            P = {'0':log(prob[j]), '1':log(1-prob[j])}
+            for k in ZZ[j]:
+                if bits[k]=='0':
+                    P['0'] += log( (1+Z[j]+Z[k]+ZZ[j][k])/4 ) - log(prob[j])
+                    P['1'] += log( (1+Z[j]-Z[k]-ZZ[j][k])/4 ) - log(1-prob[j])
+                else:
+                    P['0'] += log( (1+Z[j]-Z[k]-ZZ[j][k])/4 ) - log(prob[j])
+                    P['1'] += log( (1-Z[j]-Z[k]+ZZ[j][k])/4 ) - log(1-prob[j])
+            for bit in P:
+                P[bit] = np.exp(P[bit])
+
+            # We want to calculate the ratio of the b=0 and b=1 probabilities
+            # Prob(b on j| current state on neighours)
+            # Using the fact that
+            # Prob(b on j| current state on neighours) = P[b] / Prob(current state on neighours))
+            # this is just the ratio of P[0] and P[1]
+            if P[current]!=0:
+                accept_prob = P[proposed]/P[current]
+            else:
+                accept_prob = 1
+
+            if random.random()<accept_prob:
+                bits[j] = proposed
+
+            if sample>=samples/2 and sample%cycle==0:
+                output = ''.join(bits[::-1])
+                if output in counts:
+                    counts[output] += 1
+                else:
+                    counts[output] = 1
+                shots_taken += 1
+
+            sample += 1
+
+        return counts
