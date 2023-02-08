@@ -1,3 +1,4 @@
 qiskit
+qiskit-ignis
 scipy
 git+https://github.com/if-quantum/pairwise-tomography.git
