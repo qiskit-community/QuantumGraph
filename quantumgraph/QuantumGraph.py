@@ -217,11 +217,12 @@ class QuantumGraph ():
             # Build the single-qubit Pauli operator for the target qubit
             for pauli in ['X', 'Y', 'Z']:
                 op = 1
-                for i in range(self.num_qubits):
+                n = self.num_qubits
+                for i in range(n):
                     if i == qubit:
-                        op = np.kron(op, matrices[pauli])
+                        op = np.kron(matrices[pauli], op)
                     else:
-                        op = np.kron(op, matrices['I'])
+                        op = np.kron(matrices['I'], op)
                 expect[pauli] = np.trace(rho @ op).real
         return expect
     
