@@ -2,9 +2,13 @@ import scipy.linalg as la
 import numpy as np
 
 from qiskit import ClassicalRegister
-from qiskit.ignis.verification.tomography import StateTomographyFitter
-from qiskit.ignis.verification.tomography.data import marginal_counts
+#from qiskit.ignis.verification.tomography import StateTomographyFitter (this is deprecated)
+from qiskit_experiments.library.tomography import StateTomography
+# For fitting, use the analysis result from StateTomography
 
+#from qiskit.ignis.verification.tomography.data import marginal_counts # (This is deprecated)
+from qiskit.result import marginal_counts # (This is comatible with Qiskit 1.0+ and Qiskit Experiments)
+#                           and 'pairwise' for the pairwise tomography fitter
 '''
 These tools are heavily inspired by
 https://github.com/if-quantum/pairwise-tomography
