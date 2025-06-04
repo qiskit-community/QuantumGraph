@@ -433,6 +433,8 @@ class QuantumGraph ():
             
         # the second is found by similarly projecting the second eigenvector
         # and then finding the component orthogonal to new_vecs[0]
+        
+        '''
         vec = dot(Pup,vecs[1])
         while not valid[1]:
             new_vecs[1] = vec - inner(new_vecs[0],vec)*new_vecs[0]
@@ -456,6 +458,17 @@ class QuantumGraph ():
         while not valid[3]:
             new_vecs[3] = random_vector(ortho_vecs=[new_vecs[0],new_vecs[1],new_vecs[2]])
             valid[3] = True not in [isnan(new_vecs[3][j]) for j in range(4)]
+        '''
+        #tha above code is replaced with the following code to ensure that the new vectors are orthogonal to each other
+        for j in range(1, 4):
+            vec = dot(Pup, vecs[j])
+            for k in range(j):
+                vec -= inner(new_vecs[k], vec) * new_vecs[k]
+            while not valid[j]:
+                new_vecs[j] = normalize(vec)
+                valid[j] = not any(isnan(new_vecs[j][k]) for k in range(4))
+                vec = random_vector(ortho_vecs=new_vecs[:j])
+
             
         # a unitary is then constructed to rotate the old basis into the new
         '''
