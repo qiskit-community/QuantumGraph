@@ -255,11 +255,11 @@ class QuantumGraph ():
                 op = 1
                 for i in range(n):
                     if i == qubit0:
-                        op = np.kron(op, matrices[pauli[0]])
+                        op = np.kron(matrices[pauli[0]], op)
                     elif i == qubit1:
-                        op = np.kron(op, matrices[pauli[1]])
+                        op = np.kron(matrices[pauli[1]], op)
                     else:
-                        op = np.kron(op, matrices['I'])
+                        op = np.kron(matrices['I'], op)
                 relationship[pauli] = np.trace(rho @ op).real
         return relationship
 
