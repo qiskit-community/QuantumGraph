@@ -1,27 +1,14 @@
-#from qiskit import QuantumCircuit, execute, Aer #(not supported in qiskit 2.x.x)
-from qiskit import transpile, QuantumCircuit #(corrected to qiskit 2.0.2 version)
-from qiskit_aer import AerSimulator #(corrected to qiskit-aer version 0.17.x compatible with qiskit 2.0.2)
+from qiskit import transpile, QuantumCircuit
+from qiskit_aer import AerSimulator
 
-
-'''
-previously written
-# from qiskit.quantum_info.synthesis import OneQubitEulerDecomposer
-# from qiskit.quantum_info.synthesis.two_qubit_decompose import two_qubit_cnot_decompose
-'''
-
-# corrected to qiskit 2.0.2 version 
-from qiskit.synthesis import OneQubitEulerDecomposer #(corrected to qiskit 2.0.2 version)
-from qiskit.synthesis import TwoQubitBasisDecomposer #(corrected to qiskit 2.0.2 version)
+from qiskit.synthesis import OneQubitEulerDecomposer
+from qiskit.synthesis import TwoQubitBasisDecomposer
 from qiskit.circuit.library import CXGate
 
-from qiskit.quantum_info import partial_trace, DensityMatrix # (corrected to qiskit 2.0.2 version)
+from qiskit.quantum_info import partial_trace, DensityMatrix
 
-#from pairwise_tomography.pairwise_state_tomography_circuits import pairwise_state_tomography_circuits
-#from pairwise_tomography.pairwise_fitter import PairwiseStateTomographyFitter
-#the above imports is dependent on qiskit-ignis and ignis is not supported in qiskit 2.x.x
-
-from qiskit_experiments.library.tomography import StateTomography # (corrected to qiskit-experiments 0.6.0 compatible with qiskit 2.0.2)
-from qiskit.result import Result # (corrected to qiskit 2.0.2 version)
+from qiskit_experiments.library.tomography import StateTomography
+from qiskit.result import Result
 from qiskit_experiments.library.tomography import *
 
 from quantumgraph.ExpectationValue import ExpectationValue
@@ -36,25 +23,6 @@ from scipy.linalg import fractional_matrix_power as pwr
 from random import random, choice
 
 import time
-
-try:
-    from qiskit import IBMQ
-    IBMQ.load_account()
-except:
-    print('An IBMQ account could not be loaded')
-
-
-# used in workaround for qiskit-aer issue 1015
-class FakeResult():
-    def __init__(self):
-        self.circuits = []
-        self.counts = []
-    def set_counts(self,circ,counts):
-        self.circuits.append(circ)
-        self.counts.append(counts)
-    def get_counts(self,circ):
-        return self.counts[self.circuits.index(circ)]
-    
     
 # define the Pauli matrices in a dictionary
 matrices = {}
@@ -68,14 +36,14 @@ for pauli1 in ['I','X','Y','Z']:
         
 class QuantumGraph ():
     
-    def __init__ (self,num_qubits,coupling_map=[],device='simulator'):
+    def __init__ (self,num_qubits,coupling_map=[],backend=None):
         '''
         Args:
             num_qubits: The number of qubits, and hence the number of nodes in the graph.
             coupling_map: A list of pairs of qubits, corresponding to edges in the graph.
                 If none is given, a fully connected graph is used.
-            device: The device on which the graph will be run. Can be given as a Qiskit backend object
-                or a description of the device as a string. If none is given, a local simulator is used.
+            backend: The backend on which the graph will be run as a Qiskit backend object.
+            If none is given, a local simulator is used.
         '''
         
         self.num_qubits = num_qubits
@@ -87,25 +55,10 @@ class QuantumGraph ():
                 if ([j,k] in coupling_map) or ([j,k] in coupling_map) or (not coupling_map):
                     self.coupling_map.append([j,k])
               
-        # use the `device` input to make a Qiskit backend object
-        if type(device) is str:
-            if device=='simulator':
-                self.backend = AerSimulator() #You dont need to specify the backend as 'qasm_simulator', because in qiskit 2.x.x AerSimulator() is the default backend for qasm_simulation.
-            else:
-                try:
-                    if device[0:4]=='ibmq':
-                        backend_name = device
-                    else:
-                        backend_name = 'ibmq_' + device # fixed to work with the IBMQ backend names
-                    for provider in IBMQ.providers(): 
-                        for potential_backend in provider.backends():
-                            if potential_backend.name()==backend_name:
-                                self.backend = potential_backend
-                    self.coupling_map = self.backend.configuration().coupling_map
-                except:
-                    print('The given device does not correspond to a valid IBMQ backend')
+        if backend==None:
+            self.backend = AerSimulator()
         else:
-            self.backend = device
+            self.backend = backend
         
         # create the quantum circuit, and initialize the tomography
         self.qc = QuantumCircuit(self.num_qubits)
@@ -165,26 +118,18 @@ class QuantumGraph ():
             Returns:
                 The results object for the circuits that have been run.
             '''
-            if self.backend.name() == 'qasm_simulator' or len(self.qc.data) == 0:
-                result = FakeResult()
-                sim = AerSimulator()
-                for circ in circs:
-                    counts = sim.run(circ, shots=shots).result().get_counts()
-                    result.set_counts(circ,counts)
-                return result
-            else:
-                job = submit_job(circs)
-                if job.backend().name()!='qasm_simulator':
-                    time.sleep(1)
-                    m = 0
-                    while job.status().value != 'job has successfully run' and m < 60:
-                        time.sleep(60)
-                        print(get_status(job))
-                        m += 1
-                    if get_status(job)!='job has successfully run':
-                        print('After 1 hour, job status is ' + job.status().value + '. Another job will be submitted')
-                        job = submit_job(circs)
-                return job.result()
+            job = submit_job(circs)
+            if job.backend().name()!='qasm_simulator':
+                time.sleep(1)
+                m = 0
+                while job.status().value != 'job has successfully run' and m < 60:
+                    time.sleep(60)
+                    print(get_status(job))
+                    m += 1
+                if get_status(job)!='job has successfully run':
+                    print('After 1 hour, job status is ' + job.status().value + '. Another job will be submitted')
+                    job = submit_job(circs)
+            return job.result()
 
         if type(self.backend)==ExpectationValue:
             self.backend = ExpectationValue(self.backend.n,
@@ -209,10 +154,6 @@ class QuantumGraph ():
                 full_pauli[qubit] = pauli
                 expect[pauli] = self.backend.pauli_decomp[''.join(full_pauli)]
         else:
-            # --- REPLACE EVERYTHING BELOW THIS LINE ---
-            #if qubit==self.num_qubits-1:
-            #    q0,q1 = qubit-1,qubit
-            #else:
             rho = self.tomography  # This is the full density matrix
             # Build the single-qubit Pauli operator for the target qubit
             for pauli in ['X', 'Y', 'Z']:
@@ -313,20 +254,11 @@ class QuantumGraph ():
             state1 = [conj(state0[1]),-conj(state0[0])]
             
             return [state0,state1]
-        
-        # Debug: Print the current and target Bloch vectors
-        print(f"set_bloch called for qubit {qubit} with target_expect: {target_expect}, fraction: {fraction}, update: {update}")
 
         # add in missing zeros
         for pauli in ['X', 'Y', 'Z']:
             if pauli not in target_expect:
                 target_expect[pauli] = 0
-
-        # Debug: Print the current and target Bloch vectors
-        print(f"Current Bloch vector for qubit {qubit}: {self.get_bloch(qubit)}")
-
-        # normalize the target expectation values
-        print(f"Target Bloch vector for qubit {qubit}: {target_expect}")
         
         # determine the unitary which rotates as close to the target state as possible
         current_basis = get_basis(self.get_bloch(qubit))
@@ -337,28 +269,17 @@ class QuantumGraph ():
                 for k in range(2):
                     U[j][k] += target_basis[i][j]*conj(current_basis[i][k])
 
-        # Debug: Print the computed unitary matrix
-        print(f"Computed unitary matrix U for qubit {qubit}:\n{U}")
-
         # get the unitary for the desired fraction of the rotation
         if fraction!=1:
             U = pwr(U, fraction)
         
-        # Debug: Print the fractional unitary matrix
-        print(f"Fractional unitary matrix U for qubit {qubit} (fraction={fraction}):\n{U}")
-        
         # apply the corresponding gate
         the,phi,lam = OneQubitEulerDecomposer().angles(U)
-
-        # Debug: Print the Euler angles
-        print(f"Euler angles for qubit {qubit}: theta={the}, phi={phi}, lambda={lam}")
 
         self.qc.u(the, phi, lam, qubit)
 
         if update:
             self.update_tomography()
-            # Debug: Print confirmation of tomography update
-            print("Tomography updated after applying set_bloch.")
              
     def set_relationship(self,relationships,qubit0,qubit1,fraction=1, update=True):
         '''
@@ -430,36 +351,8 @@ class QuantumGraph ():
             valid[0] = True not in [isnan(new_vecs[0][j]) for j in range(4)]
             # if that doesn't work, a random vector is projected instead
             vec = random_vector()
-            
-        # the second is found by similarly projecting the second eigenvector
-        # and then finding the component orthogonal to new_vecs[0]
         
-        '''
-        vec = dot(Pup,vecs[1])
-        while not valid[1]:
-            new_vecs[1] = vec - inner(new_vecs[0],vec)*new_vecs[0]
-            new_vecs[1] = normalize(new_vecs[1])
-            valid[1] = True not in [isnan(new_vecs[1][j]) for j in range(4)]
-            # if that doesn't work, start with a random one instead
-            vec = random_vector()
-
-        # the third is the projection of the third eigenvector to the subpace orthogonal to the first two
-        vec = np.copy(vecs[2])
-        for j in range(2):
-            vec -= inner(new_vecs[j],vec)*new_vecs[j]
-        while not valid[2]:
-            new_vecs[2] = normalize(vec)
-            valid[2] = True not in [isnan(new_vecs[2][j]) for j in range(4)]
-            # if that doesn't work, use a random vector orthogonal to the first two
-            vec = random_vector(ortho_vecs=[new_vecs[0],new_vecs[1]])
-
-        # the last is just orthogonal to the rest
-        vec = normalize(dot(Pdown,vecs[3]))
-        while not valid[3]:
-            new_vecs[3] = random_vector(ortho_vecs=[new_vecs[0],new_vecs[1],new_vecs[2]])
-            valid[3] = True not in [isnan(new_vecs[3][j]) for j in range(4)]
-        '''
-        #tha above code is replaced with the following code to ensure that the new vectors are orthogonal to each other
+        # ensure that the new vectors are orthogonal to each other
         for j in range(1, 4):
             vec = dot(Pup, vecs[j])
             for k in range(j):
@@ -471,17 +364,7 @@ class QuantumGraph ():
 
             
         # a unitary is then constructed to rotate the old basis into the new
-        '''
-        The unitary is constructed as follows:
-        U = sum_j ( |new_vecs[j]><vecs[j]| )
-        
-        where |new_vecs[j]> is the j-th new vector and <vecs[j]| is the j-th old vector.
-        If the fraction is not 1, then the unitary is raised to the power of `fraction`.
-        The unitary is then decomposed into a circuit using the CX gate.
-        The circuit is then appended to the quantum circuit.
-        If the decomposition fails, None is returned.
-        '''
-        U = np.zeros((4, 4), dtype=complex) # What changed here is the initialization of U to a complex array because the outer product will produce complex numbers.
+        U = np.zeros((4, 4), dtype=complex)
         for j in range(4):
             U += outer(new_vecs[j],conj(vecs[j]))
 
@@ -492,7 +375,6 @@ class QuantumGraph ():
             decomposer = TwoQubitBasisDecomposer(CXGate())
             circuit = decomposer(U)
             gate = circuit.to_instruction()
-            #done = True
         except Exception as e:
             print(e)
             gate = None
