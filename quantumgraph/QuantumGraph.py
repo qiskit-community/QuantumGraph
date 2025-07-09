@@ -7,6 +7,8 @@ from qiskit.circuit.library import CXGate
 
 from qiskit.quantum_info import partial_trace, DensityMatrix
 
+from qiskit_ibm_runtime import  EstimatorV2 as Estimator
+
 from qiskit_experiments.library.tomography import StateTomography
 from qiskit.result import Result
 from qiskit_experiments.library.tomography import *
@@ -22,8 +24,6 @@ from scipy.linalg import fractional_matrix_power as pwr
 
 from random import random, choice
 
-import time
-    
 # define the Pauli matrices in a dictionary
 matrices = {}
 matrices['I'] = np.identity(2,dtype='complex')
@@ -33,7 +33,7 @@ matrices['Z'] = np.array([[1+0j,0],[0,-1+0j]])
 for pauli1 in ['I','X','Y','Z']:
     for pauli2 in ['I','X','Y','Z']:
         matrices[pauli1+pauli2] = kron(matrices[pauli2],matrices[pauli1])
-        
+
 class QuantumGraph ():
     
     def __init__ (self,num_qubits,coupling_map=[],backend=None):
@@ -55,6 +55,10 @@ class QuantumGraph ():
                 if ([j,k] in coupling_map) or ([j,k] in coupling_map) or (not coupling_map):
                     self.coupling_map.append([j,k])
               
+        # construct all two qubit paulis
+        self.observables = self._get_observables()
+
+        # set backend
         if backend==None:
             self.backend = AerSimulator()
         else:
@@ -64,6 +68,23 @@ class QuantumGraph ():
         self.qc = QuantumCircuit(self.num_qubits)
         self.update_tomography()
         
+    def _get_observables(self):
+        observables = []
+        for qubit0 in range(self.num_qubits):
+            for pauli in ['X','Y','Z']:
+                full_pauli = ['I']*self.num_qubits
+                full_pauli[qubit0] = pauli
+                obs = ''.join(full_pauli)
+                observables.append(obs)
+            for qubit1 in range(qubit0+1,self.num_qubits):
+                full_pauli = ['I']*self.num_qubits
+                for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
+                    full_pauli[qubit0] = pauli[0]
+                    full_pauli[qubit1] = pauli[1]
+                    obs = ''.join(full_pauli)
+                    observables.append(obs)
+        return observables
+
     def update_tomography(self, shots=8192):
         '''
         Updates the `tomography` attribute of the `QuantumGraph` object, which contain the two qubit tomography.
@@ -71,65 +92,7 @@ class QuantumGraph ():
         
         Args:
             shots: Number of shots to use.
-        '''
-        
-        def get_status(job):
-            '''
-            Get the status of a submitted job, mitigating for the fact that there may be a disconnection.
-            '''
-            try:
-                job_status = job.status().value
-            except:
-                job_status = 'Something is wrong. Perhaps disconnected.'
-            return job_status
-        
-        def submit_job(circs):
-            '''
-            Submit a job until it has been verified to have been submitted.
-            If the circuit is empty, this is done using the 'qasm_simulator' rather than the specified backend.
-            
-            Args:
-                circs: A list of circuits to run.
-            
-            Returns:
-                The job object of the submitted job.
-            '''
-            if len(self.qc.data) == 0:
-                sim = AerSimulator()
-                job = sim.run(circs, shots=shots)
-            else:
-                submitted = False
-                while not submitted==False:
-                    try:
-                        job = self.backend.run(circs, shots=shots)
-                        submitted = True
-                    except:
-                        print('Submission failed. Trying again in a minute')
-                        time.sleep(60)
-            return job
-        
-        def get_result(circs):
-            '''
-            Submits a list of circuits, waits until they run and then returns the results object.
-            
-            Args:
-                circs: A list of circuits to run.
-            
-            Returns:
-                The results object for the circuits that have been run.
-            '''
-            job = submit_job(circs)
-            if job.backend().name()!='qasm_simulator':
-                time.sleep(1)
-                m = 0
-                while job.status().value != 'job has successfully run' and m < 60:
-                    time.sleep(60)
-                    print(get_status(job))
-                    m += 1
-                if get_status(job)!='job has successfully run':
-                    print('After 1 hour, job status is ' + job.status().value + '. Another job will be submitted')
-                    job = submit_job(circs)
-            return job.result()
+        '''   
 
         if type(self.backend)==ExpectationValue:
             self.backend = ExpectationValue(self.backend.n,
@@ -137,71 +100,54 @@ class QuantumGraph ():
                                             pairs=self.backend.pairs)
             self.backend.apply_circuit(self.qc)
         else:
-            tomo_exp = StateTomography(self.qc)
-            exp_data = tomo_exp.run(self.backend, shots=shots)
-            exp_data.block_for_results()
-            self.tomography = exp_data.analysis_results(0).value  # This is the density matrix
+            estimator = Estimator(mode=self.backend)
+            estimator.options.default_shots = shots
+            job = estimator.run([(transpile(self.qc,self.backend), self.observables)])
+            result = job.result()[0]
+            self.pauli_decomp = {}
+            for obs, val in zip (self.observables, result.data.evs):
+                self.pauli_decomp[obs[::-1]] = val
     
     def get_bloch(self,qubit):
         '''
         Returns the X, Y and Z expectation values for the given qubit.
         '''
-
-        expect = {}
         if type(self.backend) == ExpectationValue:
-            full_pauli = ['I'] * self.num_qubits
-            for pauli in ['X', 'Y', 'Z']:
-                full_pauli[qubit] = pauli
-                expect[pauli] = self.backend.pauli_decomp[''.join(full_pauli)]
+            pauli_decomp = self.backend.pauli_decomp
         else:
-            rho = self.tomography  # This is the full density matrix
-            # Build the single-qubit Pauli operator for the target qubit
-            for pauli in ['X', 'Y', 'Z']:
-                op = 1
-                n = self.num_qubits
-                for i in range(n):
-                    if i == qubit:
-                        op = np.kron(matrices[pauli], op)
-                    else:
-                        op = np.kron(matrices['I'], op)
-                expect[pauli] = np.trace(rho @ op).real
+            pauli_decomp = self.pauli_decomp
+        expect = {}
+        full_pauli = ['I'] * self.num_qubits
+        for pauli in ['X', 'Y', 'Z']:
+            full_pauli[qubit] = pauli
+            expect[pauli] = pauli_decomp[''.join(full_pauli)]
         return expect
     
     def get_relationship(self, qubit0, qubit1):
         '''
         Returns the two qubit pauli expectation values for a given pair of qubits.
         '''
-        relationship = {}
         if type(self.backend) == ExpectationValue:
-            full_pauli = ['I']*self.num_qubits
-            for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
-                full_pauli[qubit0] = pauli[0]
-                full_pauli[qubit1] = pauli[1]
-                key = ''.join(full_pauli)
-                if key in self.backend.pauli_decomp:
-                    val = self.backend.pauli_decomp[key]
-                else:
-                    # Use product of marginals if not present
-                    bloch0 = self.get_bloch(qubit0)
-                    bloch1 = self.get_bloch(qubit1)
-                    val = bloch0[pauli[0]] * bloch1[pauli[1]]
-                relationship[pauli] = val
-                # Reset for next loop
-                full_pauli[qubit0] = 'I'
-                full_pauli[qubit1] = 'I'
+            pauli_decomp = self.backend.pauli_decomp
         else:
-            rho = self.tomography  # Full density matrix
-            n = self.num_qubits
-            for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
-                op = 1
-                for i in range(n):
-                    if i == qubit0:
-                        op = np.kron(matrices[pauli[0]], op)
-                    elif i == qubit1:
-                        op = np.kron(matrices[pauli[1]], op)
-                    else:
-                        op = np.kron(matrices['I'], op)
-                relationship[pauli] = np.trace(rho @ op).real
+            pauli_decomp = self.pauli_decomp
+        relationship = {}
+        full_pauli = ['I']*self.num_qubits
+        for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
+            full_pauli[qubit0] = pauli[0]
+            full_pauli[qubit1] = pauli[1]
+            full_pauli_string = ''.join(full_pauli)
+            if full_pauli_string in pauli_decomp:
+                val = pauli_decomp[full_pauli_string]
+            else:
+                # Use product of marginals if not present
+                bloch0 = self.get_bloch(qubit0)
+                bloch1 = self.get_bloch(qubit1)
+                val = bloch0[pauli[0]] * bloch1[pauli[1]]
+            relationship[pauli] = val
+            # Reset for next loop
+            full_pauli[qubit0] = 'I'
+            full_pauli[qubit1] = 'I'
         return relationship
 
 
@@ -215,24 +161,6 @@ class QuantumGraph ():
             fraction: fraction of the rotation toward the target state to apply.
             update: whether to update the tomography after the rotation is added to the circuit.
         '''
-        def basis_change(pole,basis,qubit,dagger=False):
-            '''
-            Returns the circuit required to change from the Z basis to the eigenbasis
-            of a particular Pauli. The opposite is done when `dagger=True`.
-            '''
-            if pole=='+' and dagger==True:
-                self.qc.x(qubit)
-            
-            if basis=='X':
-                self.qc.h(qubit)
-            elif basis=='Y':
-                if dagger:
-                    self.qc.rx(-pi/2,qubit)
-                else:
-                    self.qc.rx(pi/2,qubit)
-                    
-            if pole=='+' and dagger==False:
-                self.qc.x(qubit)
                     
         def normalize(expect):
             '''
@@ -314,23 +242,16 @@ class QuantumGraph ():
             return normalize(vec)
         
         def get_rho(qubit0,qubit1):
-            if type(self.backend)==ExpectationValue:
-                rel = self.get_relationship(qubit0,qubit1)
-                b0 = self.get_bloch(qubit0)
-                b1 = self.get_bloch(qubit1)
-                rho = np.identity(4,dtype='complex128')
-                for pauli in ['X','Y','Z']:
-                    rho += b0[pauli]*matrices[pauli+'I']
-                    rho += b1[pauli]*matrices['I'+pauli]
-                for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
-                    rho += rel[pauli]*matrices[pauli]
-                return rho/4
-            else:
-                # Extract the reduced density matrix for qubit0 and qubit1
-                rho_full = DensityMatrix(self.tomography)
-                reduced = partial_trace(rho_full, [i for i in range(self.num_qubits) if i not in [qubit0, qubit1]])
-                # The result is a 2-qubit DensityMatrix object
-                return reduced.data
+            rel = self.get_relationship(qubit0,qubit1)
+            b0 = self.get_bloch(qubit0)
+            b1 = self.get_bloch(qubit1)
+            rho = np.identity(4,dtype='complex128')
+            for pauli in ['X','Y','Z']:
+                rho += b0[pauli]*matrices[pauli+'I']
+                rho += b1[pauli]*matrices['I'+pauli]
+            for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
+                rho += rel[pauli]*matrices[pauli]
+            return rho/4
 
         raw_vals,raw_vecs = la.eigh( get_rho(qubit0,qubit1) )
         vals = sorted([(val,k) for k,val in enumerate(raw_vals)], reverse=True)
