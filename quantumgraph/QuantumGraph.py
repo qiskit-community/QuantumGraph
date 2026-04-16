@@ -209,89 +209,135 @@ class QuantumGraph ():
         if update:
             self.update_tomography()
              
-    def set_relationship(self,relationships,qubit0,qubit1,fraction=1, update=True):
+    def set_relationship(self, relationships, qubit0, qubit1, fraction=1, update=True):
         '''
         Rotates the given pair of qubits towards the given target expectation values.
-        
+
         Args:
-            target_state: Target expectation values.
-            qubit0, qubit1: Qubits on which the operation is applied
-            fraction: fraction of the rotation toward the target state to apply.
-            update: whether to update the tomography after the rotation is added to the circuit.
+            relationships: Dictionary of Pauli relationships to enforce, e.g. {'ZX': +1, 'XZ': +1}.
+            qubit0, qubit1: Qubits on which the operation is applied.
+            fraction: Fraction of the rotation toward the target state to apply.
+            update: Whether to update the tomography after the rotation is added to the circuit.
         '''
         zero = 0.001
 
-        def inner(vec1,vec2):
-            inner = 0
+        def inner(vec1, vec2):
+            out = 0
             for j in range(len(vec1)):
-                inner += conj(vec1[j])*vec2[j]
-            return inner
+                out += conj(vec1[j]) * vec2[j]
+            return out
 
         def normalize(vec):
-            renorm = sqrt(inner(vec,vec))
-            if abs((renorm*conj(renorm)))>zero:
-                return np.copy(vec)/renorm
+            renorm = sqrt(inner(vec, vec))
+            if abs(renorm * conj(renorm)) > zero:
+                return np.copy(vec) / renorm
             else:
-                return [nan for amp in vec]
-            
-        def random_vector(ortho_vecs=[]):
-            vec = np.array([ 2*random()-1 for _ in range(4) ],dtype='complex')
+                return [nan for _ in vec]
+
+        def random_vector():
+            vec = np.array([2 * random() - 1 for _ in range(4)], dtype='complex')
             vec[0] = abs(vec[0])
-            for ortho_vec in ortho_vecs:
-                vec -= inner(ortho_vec,vec)*ortho_vec
             return normalize(vec)
-        
-        def get_rho(qubit0,qubit1):
-            rel = self.get_relationship(qubit0,qubit1)
+
+        def is_valid(vec):
+            return not any(isnan(vec[j]) for j in range(4))
+
+        def projector_rank(P, tol=1e-8):
+            vals = la.eigvalsh(P)
+            return sum(abs(val) > tol for val in vals)
+
+        def make_vec(projector, seed_vec, ortho_vecs=None, max_tries=100):
+            if ortho_vecs is None:
+                ortho_vecs = []
+
+            vec = dot(projector, seed_vec)
+            for basis_vec in ortho_vecs:
+                vec -= inner(basis_vec, vec) * basis_vec
+            new_vec = normalize(vec)
+
+            tries = 0
+            while not is_valid(new_vec) and tries < max_tries:
+                vec = dot(projector, random_vector())
+                for basis_vec in ortho_vecs:
+                    vec -= inner(basis_vec, vec) * basis_vec
+                new_vec = normalize(vec)
+                tries += 1
+
+            if not is_valid(new_vec):
+                raise ValueError(
+                    "Could not construct another independent vector in the requested projector subspace. "
+                    "This usually means the projector rank is too small for the number of vectors requested."
+                )
+
+            return new_vec
+
+        def get_rho(qubit0, qubit1):
+            rel = self.get_relationship(qubit0, qubit1)
             b0 = self.get_bloch(qubit0)
             b1 = self.get_bloch(qubit1)
-            rho = np.identity(4,dtype='complex128')
-            for pauli in ['X','Y','Z']:
-                rho += b0[pauli]*matrices[pauli+'I']
-                rho += b1[pauli]*matrices['I'+pauli]
-            for pauli in ['XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
-                rho += rel[pauli]*matrices[pauli]
-            return rho/4
+            rho = np.identity(4, dtype='complex128')
+            for pauli in ['X', 'Y', 'Z']:
+                rho += b0[pauli] * matrices[pauli + 'I']
+                rho += b1[pauli] * matrices['I' + pauli]
+            for pauli in ['XX', 'XY', 'XZ', 'YX', 'YY', 'YZ', 'ZX', 'ZY', 'ZZ']:
+                rho += rel[pauli] * matrices[pauli]
+            return rho / 4
 
-        raw_vals,raw_vecs = la.eigh( get_rho(qubit0,qubit1) )
-        vals = sorted([(val,k) for k,val in enumerate(raw_vals)], reverse=True)
-        vecs = [[ raw_vecs[j][k] for j in range(4)] for (val,k) in vals]
-        
-        Pup = np.identity(4,dtype='complex')
-        for (pauli,sign) in relationships.items():
-            Pup = dot(Pup, (matrices['II']+sign*matrices[pauli])/2)
-        Pdown = (matrices['II'] - Pup)
+        def commute(pauli1, pauli2):
+            noncommuting_pairs = {
+                ('X', 'Y'), ('Y', 'X'),
+                ('Y', 'Z'), ('Z', 'Y'),
+                ('Z', 'X'), ('X', 'Z')
+            }
+            flips = 0
+            for a, b in zip(pauli1, pauli2):
+                if (a, b) in noncommuting_pairs:
+                    flips += 1
+            return (flips % 2) == 0
 
+        # Sanity check: all requested Pauli constraints should commute
+        paulis = list(relationships.keys())
+        for j in range(len(paulis)):
+            for k in range(j + 1, len(paulis)):
+                if not commute(paulis[j], paulis[k]):
+                    raise ValueError(
+                        f"Noncommuting relationships supplied: {paulis[j]} and {paulis[k]}"
+                    )
+
+        # Get the eigenvectors and eigenvalues of the two-qubit state
+        raw_vals, raw_vecs = la.eigh(get_rho(qubit0, qubit1))
+        vals = sorted([(val, k) for k, val in enumerate(raw_vals)], reverse=True)
+        vecs = [[raw_vecs[j][k] for j in range(4)] for (_, k) in vals]
+
+        # Define projector onto the constraint space
+        Pup = np.identity(4, dtype='complex')
+        for (pauli, sign) in relationships.items():
+            Pup = dot(Pup, (matrices['II'] + sign * matrices[pauli]) / 2)
+        Pdown = matrices['II'] - Pup
+
+        # Determine how many basis vectors belong in each sector
+        rank_up = projector_rank(Pup)
+        rank_down = 4 - rank_up
+
+        # Build a new orthonormal basis adapted to Pup / Pdown
         new_vecs = [[nan for _ in range(4)] for _ in range(4)]
-        valid = [False for _ in range(4)]
 
-        # the first new vector comes from projecting the first eigenvector
-        vec = np.copy(vecs[0])
-        while not valid[0]:
-            new_vecs[0] = normalize(dot(Pup,vec))
-            valid[0] = True not in [isnan(new_vecs[0][j]) for j in range(4)]
-            # if that doesn't work, a random vector is projected instead
-            vec = random_vector()
-        
-        # ensure that the new vectors are orthogonal to each other
-        for j in range(1, 4):
-            vec = dot(Pup, vecs[j])
-            for k in range(j):
-                vec -= inner(new_vecs[k], vec) * new_vecs[k]
-            while not valid[j]:
-                new_vecs[j] = normalize(vec)
-                valid[j] = not any(isnan(new_vecs[j][k]) for k in range(4))
-                vec = random_vector(ortho_vecs=new_vecs[:j])
+        # Fill the Pup sector first using the most significant eigenvectors as seeds
+        for j in range(rank_up):
+            new_vecs[j] = make_vec(Pup, vecs[j], ortho_vecs=new_vecs[:j])
 
-            
-        # a unitary is then constructed to rotate the old basis into the new
+        # Fill the Pdown sector with the remaining vectors
+        for j in range(rank_up, 4):
+            new_vecs[j] = make_vec(Pdown, vecs[j], ortho_vecs=new_vecs[rank_up:j])
+
+        # A unitary is then constructed to rotate the old basis into the new
         U = np.zeros((4, 4), dtype=complex)
         for j in range(4):
-            U += outer(new_vecs[j],conj(vecs[j]))
+            U += outer(new_vecs[j], conj(vecs[j]))
 
-        if fraction!=1:
+        if fraction != 1:
             U = pwr(U, fraction)
-            
+
         try:
             decomposer = TwoQubitBasisDecomposer(CXGate())
             circuit = decomposer(U)
@@ -301,11 +347,9 @@ class QuantumGraph ():
             gate = None
 
         if gate:
-            self.qc.append(gate,[qubit0,qubit1])
+            self.qc.append(gate, [qubit0, qubit1])
 
         if update:
             self.update_tomography()
 
         return gate
-        
-        
